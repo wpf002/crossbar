@@ -1,0 +1,32 @@
+{
+  "name": "crossbar",
+  "private": true,
+  "version": "0.0.1",
+  "scripts": {
+    "dev:api": "pnpm --filter @crossbar/api dev",
+    "dev:web": "pnpm --filter @crossbar/web dev",
+    "dev:matcher": "pnpm --filter @crossbar/matcher dev",
+    "dev:resolver": "pnpm --filter @crossbar/resolver dev",
+    "dev": "pnpm -r --parallel run dev",
+    "build": "pnpm -r build",
+    "db:generate": "pnpm --filter @crossbar/db generate",
+    "db:migrate": "pnpm --filter @crossbar/db migrate",
+    "db:studio": "pnpm --filter @crossbar/db studio",
+    "db:seed": "pnpm --filter @crossbar/db seed",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "tsx": "^4.16.2",
+    "@types/node": "^20.14.10",
+    "prettier": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.7.0"
+}

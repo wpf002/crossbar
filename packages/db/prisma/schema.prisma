@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users & Wallets ─────────────────────────────────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  createdAt DateTime @default(now())
+
+  wallet       Wallet?
+  orders       Order[]
+  positions    Position[]
+  buyerTrades  Trade[]    @relation("BuyerTrades")
+  sellerTrades Trade[]    @relation("SellerTrades")
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  // Balances stored as integer cents to avoid float math
+  balance   Int      @default(100000) // $1,000 starting play money
+  reserved  Int      @default(0)      // tied up in open orders
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Sports & Events ─────────────────────────────────────────────────────
+model Sport {
+  id     String  @id // 'mlb' | 'nfl' | 'nba' | 'nhl'
+  name   String
+  events Event[]
+}
+
+model Event {
+  id         String      @id @default(cuid())
+  sportId    String
+  sport      Sport       @relation(fields: [sportId], references: [id])
+  externalId String      // ESPN event ID
+  homeTeam   String
+  awayTeam   String
+  startsAt   DateTime
+  status     EventStatus @default(SCHEDULED)
+  homeScore  Int?
+  awayScore  Int?
+  resolvedAt DateTime?
+
+  markets    Market[]
+
+  @@unique([sportId, externalId])
+  @@index([startsAt])
+  @@index([status])
+}
+
+enum EventStatus {
+  SCHEDULED
+  LIVE
+  FINAL
+  POSTPONED
+  CANCELED
+}
+
+// ─── Markets ─────────────────────────────────────────────────────────────
+model Market {
+  id         String       @id @default(cuid())
+  eventId    String
+  event      Event        @relation(fields: [eventId], references: [id])
+  type       MarketType
+  question   String
+  yesLabel   String
+  noLabel    String
+  line       Float?       // total points or spread value (null for moneyline)
+  status     MarketStatus @default(OPEN)
+  outcome    Outcome?     // set on resolution
+  closedAt   DateTime?
+  resolvedAt DateTime?
+
+  orders    Order[]
+  trades    Trade[]
+  positions Position[]
+
+  @@index([status])
+  @@index([eventId])
+}
+
+enum MarketType {
+  MONEYLINE
+  TOTAL
+  SPREAD
+}
+
+enum MarketStatus {
+  OPEN
+  CLOSED
+  RESOLVED
+  VOIDED
+}
+
+enum Outcome {
+  YES
+  NO
+  INVALID
+}
+
+// ─── Orders & Trades ─────────────────────────────────────────────────────
+model Order {
+  id        String      @id @default(cuid())
+  marketId  String
+  market    Market      @relation(fields: [marketId], references: [id])
+  userId    String
+  user      User        @relation(fields: [userId], references: [id])
+  side      OrderSide
+  outcome   Outcome     // always YES or NO (never INVALID)
+  price     Int         // 1-99 cents per share
+  quantity  Int         // total shares
+  filled    Int         @default(0)
+  status    OrderStatus @default(OPEN)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  fills TradeFill[]
+
+  @@index([marketId, status])
+  @@index([userId])
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderStatus {
+  OPEN
+  PARTIAL
+  FILLED
+  CANCELED
+}
+
+model Trade {
+  id           String  @id @default(cuid())
+  marketId     String
+  market       Market  @relation(fields: [marketId], references: [id])
+  outcome      Outcome // YES or NO contract that traded
+  price        Int     // execution price 1-99
+  quantity     Int
+  buyerUserId  String
+  buyer        User    @relation("BuyerTrades", fields: [buyerUserId], references: [id])
+  sellerUserId String
+  seller       User    @relation("SellerTrades", fields: [sellerUserId], references: [id])
+  createdAt    DateTime @default(now())
+
+  fills TradeFill[]
+
+  @@index([marketId, createdAt])
+}
+
+model TradeFill {
+  id       String @id @default(cuid())
+  tradeId  String
+  trade    Trade  @relation(fields: [tradeId], references: [id])
+  orderId  String
+  order    Order  @relation(fields: [orderId], references: [id])
+  quantity Int
+
+  @@index([orderId])
+}
+
+model Position {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id])
+  marketId    String
+  market      Market @relation(fields: [marketId], references: [id])
+  yesShares   Int    @default(0)
+  noShares    Int    @default(0)
+  avgYesCost  Int?   // weighted avg cost basis (cents)
+  avgNoCost   Int?
+  realizedPnl Int    @default(0)
+
+  @@unique([userId, marketId])
+  @@index([userId])
+}
