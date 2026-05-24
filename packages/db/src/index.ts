@@ -16,3 +16,25 @@ if (process.env.NODE_ENV === 'development') {
 }
 
 export * from '@prisma/client';
+
+// ─── Helper queries ──────────────────────────────────────────────────────
+
+export async function getOpenOrders(marketId: string) {
+  return prisma.order.findMany({
+    where: {
+      marketId,
+      status: { in: ['OPEN', 'PARTIAL'] },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+}
+
+export async function getUserPosition(userId: string, marketId: string) {
+  return prisma.position.findUnique({
+    where: { userId_marketId: { userId, marketId } },
+  });
+}
+
+export async function getUserWallet(userId: string) {
+  return prisma.wallet.findUnique({ where: { userId } });
+}
