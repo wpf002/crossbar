@@ -1,0 +1,22 @@
+import { defineConfig } from 'vitest/config';
+
+const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL ?? 'postgresql://crossbar:crossbar@localhost:5432/crossbar_test';
+
+export default defineConfig({
+  test: {
+    globalSetup: ['./vitest.global-setup.ts'],
+    setupFiles: ['./vitest.setup.ts'],
+    pool: 'forks',
+    poolOptions: {
+      forks: { singleFork: true },
+    },
+    env: {
+      DATABASE_URL: TEST_DATABASE_URL,
+      NODE_ENV: 'test',
+    },
+    testTimeout: 30000,
+    hookTimeout: 60000,
+    fileParallelism: false,
+  },
+});
