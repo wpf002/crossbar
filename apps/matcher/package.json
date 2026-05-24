@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@crossbar/db": "workspace:*",
+    "@crossbar/engine": "workspace:*",
     "@crossbar/shared": "workspace:*",
     "ioredis": "^5.4.1",
     "pino": "^9.3.2",
