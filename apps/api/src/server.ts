@@ -1,20 +1,22 @@
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
+import type { EngineContext } from '@crossbar/engine';
+import { buildApp, hydrateBooksFromDb } from './app.js';
+import { prisma } from './lib/prisma.js';
+import { loadEnv } from './env.js';
 
-const app = Fastify({
-  logger: {
-    transport:
-      process.env.NODE_ENV === 'development'
-        ? { target: 'pino-pretty', options: { colorize: true } }
-        : undefined,
-  },
-});
+async function main(): Promise<void> {
+  const env = loadEnv();
 
-await app.register(cors, { origin: true });
+  const books = await hydrateBooksFromDb();
+  const engineCtx: EngineContext = { prisma, books };
 
-app.get('/health', async () => ({ ok: true, ts: Date.now() }));
+  const app = await buildApp({ env, engineCtx });
 
-const port = Number(process.env.API_PORT ?? 4000);
-app.listen({ port, host: '0.0.0.0' }).then(() => {
-  app.log.info(`crossbar api listening on :${port}`);
+  await app.listen({ port: env.API_PORT, host: '0.0.0.0' });
+  app.log.info(`crossbar api listening on :${env.API_PORT}`);
+}
+
+main().catch((err: unknown) => {
+  // eslint-disable-next-line no-console
+  console.error('fatal startup error', err);
+  process.exit(1);
 });
