@@ -43,11 +43,17 @@ async function main(): Promise<void> {
       data: {
         email: 'alice@demo.local',
         username: 'alice',
+        passwordHash: 'demo-placeholder-hash',
         wallet: { create: {} },
       },
     }),
     prisma.user.create({
-      data: { email: 'bob@demo.local', username: 'bob', wallet: { create: {} } },
+      data: {
+        email: 'bob@demo.local',
+        username: 'bob',
+        passwordHash: 'demo-placeholder-hash',
+        wallet: { create: {} },
+      },
     }),
   ]);
 

@@ -65,6 +65,7 @@ async function mkUser(label: string, balance: number): Promise<string> {
     data: {
       email: `${label}-${userCounter}-${Date.now()}@test.local`,
       username: `${label}-${userCounter}-${Date.now()}`,
+      passwordHash: 'test-placeholder-hash',
       wallet: { create: { balance, reserved: 0 } },
     },
   });
