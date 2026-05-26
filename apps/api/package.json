@@ -7,7 +7,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "admin:grant": "tsx scripts/grant-admin.ts"
   },
   "dependencies": {
     "@crossbar/bots": "workspace:*",

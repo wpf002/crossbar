@@ -19,11 +19,18 @@ const LoginSchema = z.object({
   password: z.string().min(1),
 });
 
-function publicUser(u: { id: string; email: string; username: string; createdAt: Date }) {
+function publicUser(u: {
+  id: string;
+  email: string;
+  username: string;
+  isAdmin: boolean;
+  createdAt: Date;
+}) {
   return {
     id: u.id,
     email: u.email,
     username: u.username,
+    isAdmin: u.isAdmin,
     createdAt: u.createdAt.toISOString(),
   };
 }
@@ -52,7 +59,11 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       },
     });
 
-    const token = fastify.jwt.sign({ sub: user.id, email: user.email });
+    const token = fastify.jwt.sign({
+      sub: user.id,
+      email: user.email,
+      isAdmin: user.isAdmin,
+    });
     return { user: publicUser(user), token };
   });
 
@@ -70,7 +81,11 @@ export default async function authRoutes(fastify: FastifyInstance): Promise<void
       throw new HttpError(401, 'UNAUTHORIZED', 'Invalid email or password');
     }
 
-    const token = fastify.jwt.sign({ sub: user.id, email: user.email });
+    const token = fastify.jwt.sign({
+      sub: user.id,
+      email: user.email,
+      isAdmin: user.isAdmin,
+    });
     return { user: publicUser(user), token };
   });
 }
