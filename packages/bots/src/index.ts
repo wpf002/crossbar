@@ -1,8 +1,10 @@
 export * from './types.js';
 export * from './fair-value.js';
 export * from './backtest.js';
+export * from './learner.js';
 export { houseMaker } from './strategies/house-maker.js';
 export { pinnacle } from './strategies/pinnacle.js';
 export { contrarian } from './strategies/contrarian.js';
 export { momentum } from './strategies/momentum.js';
 export { random } from './strategies/random.js';
+export { adaptive, makeAdaptive } from './strategies/adaptive.js';

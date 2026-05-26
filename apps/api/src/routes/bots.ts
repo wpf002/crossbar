@@ -1,14 +1,38 @@
 import type { FastifyInstance } from 'fastify';
-import { runBacktest, type BacktestResult, type BacktestSummary } from '@crossbar/bots';
+import {
+  CalibrationLearner,
+  runBacktest,
+  type BacktestResult,
+  type BacktestSummary,
+} from '@crossbar/bots';
 import { prisma } from '../lib/prisma.js';
 
 const BOT_USERNAMES = [
   'bot_house',
   'bot_pinnacle',
+  'bot_adaptive',
   'bot_contrarian',
   'bot_momentum',
   'bot_random',
 ];
+
+/**
+ * Recompute the learner state from scratch by replaying all resolved markets
+ * in resolution order. Cached briefly so a Polling /bots/learner endpoint
+ * doesn't hammer Postgres on every request.
+ */
+const LEARNER_TTL_MS = 60_000;
+let learnerCache: { at: number; snapshot: ReturnType<CalibrationLearner['snapshot']> } | null = null;
+async function getLearnerSnapshot(): Promise<ReturnType<CalibrationLearner['snapshot']>> {
+  if (learnerCache && Date.now() - learnerCache.at < LEARNER_TTL_MS) {
+    return learnerCache.snapshot;
+  }
+  const learner = new CalibrationLearner();
+  await learner.refreshFromDb(prisma);
+  const snapshot = learner.snapshot();
+  learnerCache = { at: Date.now(), snapshot };
+  return snapshot;
+}
 
 /**
  * Cache the simulated backtest in-memory. Recomputing 200-event Monte Carlo
@@ -33,6 +57,10 @@ function getBacktest(): BacktestSummary {
  *                   any real game has resolved.
  */
 export default async function botsRoutes(fastify: FastifyInstance): Promise<void> {
+  fastify.get('/bots/learner', async () => {
+    return getLearnerSnapshot();
+  });
+
   fastify.get('/bots/stats', async () => {
     const bots = await prisma.user.findMany({
       where: { username: { in: BOT_USERNAMES } },

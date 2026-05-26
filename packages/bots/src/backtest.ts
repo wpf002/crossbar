@@ -4,9 +4,27 @@ import { pinnacle } from './strategies/pinnacle.js';
 import { contrarian } from './strategies/contrarian.js';
 import { momentum } from './strategies/momentum.js';
 import { random } from './strategies/random.js';
+import { makeAdaptive } from './strategies/adaptive.js';
+import { CalibrationLearner, bucketKey } from './learner.js';
 import type { Bot, MarketContext } from './types.js';
 
-export const BOTS: Bot[] = [houseMaker, pinnacle, contrarian, momentum, random];
+/**
+ * The simulated backtest runs `adaptive` with a fresh, scoped learner that
+ * gets fed each event's outcome as the run progresses. That way the
+ * dashboard shows the *online learning* form of the bot — not the cold-start
+ * version which is identical to pinnacle.
+ */
+const adaptiveLearner = new CalibrationLearner({ alpha: 0.1, minSamples: 5 });
+const adaptiveBacktest = makeAdaptive(adaptiveLearner);
+
+export const BOTS: Bot[] = [
+  houseMaker,
+  pinnacle,
+  adaptiveBacktest,
+  contrarian,
+  momentum,
+  random,
+];
 
 export interface CalibrationBin {
   bin: number;
@@ -160,6 +178,8 @@ export function runBacktest(events = 200, seed = 42): BacktestSummary {
     results.set(b.name, emptyResult(b.name));
     brierSums.set(b.name, 0);
   }
+  // Fresh learner per backtest run so re-runs are deterministic.
+  adaptiveLearner.reset();
 
   evts.forEach((ev, i) => {
     const marketId = `sim-${i}`;
@@ -231,6 +251,14 @@ export function runBacktest(events = 200, seed = 42): BacktestSummary {
       const cb = r.calibration[binIdx]!;
       cb.count += 1;
       if (wasYes) cb.wins += 1;
+    }
+
+    // Online learning: feed the resolved outcome back into the adaptive
+    // learner using the *raw* ESPN-derived fair as the prediction. This
+    // mirrors what the live maker process does on each tick.
+    if (fair.confidence !== 'low') {
+      const bucket = bucketKey(ev.sportId, 'MONEYLINE', fair.yesCents);
+      adaptiveLearner.record(bucket, fair.yesCents, ev.homeWon ? 100 : 0);
     }
   });
 

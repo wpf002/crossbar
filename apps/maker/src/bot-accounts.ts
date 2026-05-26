@@ -22,6 +22,7 @@ export const BOT_DEFS: BotIdentity[] = [
   { username: 'bot_contrarian', email: 'bot_contrarian@crossbar.bot', startingBalanceCents: 1_000_000_00 },
   { username: 'bot_momentum', email: 'bot_momentum@crossbar.bot', startingBalanceCents: 1_000_000_00 },
   { username: 'bot_random', email: 'bot_random@crossbar.bot', startingBalanceCents: 1_000_000_00 },
+  { username: 'bot_adaptive', email: 'bot_adaptive@crossbar.bot', startingBalanceCents: 1_000_000_00 },
 ];
 
 const BOT_PASSWORD = process.env.BOT_PASSWORD ?? 'crossbar-bot-secret-please-change';

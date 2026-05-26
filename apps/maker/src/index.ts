@@ -2,6 +2,8 @@ import cron from 'node-cron';
 import pino from 'pino';
 import { prisma } from '@crossbar/db';
 import {
+  adaptive,
+  defaultLearner,
   fairValueFor,
   houseMaker,
   pinnacle,
@@ -27,6 +29,7 @@ const TICK_CRON = process.env.MAKER_CRON ?? '*/30 * * * * *';
 const BOTS: Record<string, Bot> = {
   bot_house: houseMaker,
   bot_pinnacle: pinnacle,
+  bot_adaptive: adaptive,
   bot_contrarian: contrarian,
   bot_momentum: momentum,
   bot_random: random,
@@ -43,6 +46,17 @@ async function tick(api: ApiClient, bots: ActiveBot[]): Promise<void> {
   const started = Date.now();
 
   try {
+    // Refresh the calibration learner first — newly-resolved markets since
+    // the last tick teach the adaptive bot.
+    const { ingested } = await defaultLearner.refreshFromDb(prisma);
+    if (ingested > 0) {
+      const snap = defaultLearner.snapshot();
+      log.info(
+        { ingested, buckets: snap.entries.length, totalSamples: snap.totalSamples },
+        'learner refreshed',
+      );
+    }
+
     const markets = (await api.listMarkets()).filter((m) => m.status === 'OPEN');
     if (markets.length === 0) {
       log.info('no open markets — idle tick');
@@ -117,8 +131,21 @@ async function tick(api: ApiClient, bots: ActiveBot[]): Promise<void> {
   }
 }
 
+async function waitForApi(attempts = 30, delayMs = 1000): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await fetch(`${API_URL}/health`);
+      return;
+    } catch {
+      if (i === attempts - 1) throw new Error(`API at ${API_URL} never came up`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
 async function main(): Promise<void> {
   log.info({ apiUrl: API_URL, cron: TICK_CRON }, 'crossbar maker starting');
+  await waitForApi();
   const api = new ApiClient({ baseUrl: API_URL, log });
   const bots = await ensureBotAccounts(api, log);
   log.info({ bots: bots.map((b) => b.username) }, 'bot accounts ready');
