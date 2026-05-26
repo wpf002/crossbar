@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    background-color: #020617; /* slate-950 */
+    color: #f8fafc; /* slate-50 */
+    min-height: 100vh;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+
+  /* Every numeric value should look like it belongs in a column. */
+  .tabular,
+  .price,
+  .qty,
+  .money {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum', 'cv11';
+  }
+
+  /* Reduce visual noise on number inputs */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+}
+
+@layer components {
+  /* Persistent bottom drawer / right rail offsets — applied to <main> */
+  .has-slip {
+    padding-bottom: 12rem;
+  }
+
+  @media (min-width: 1024px) {
+    .has-slip {
+      padding-bottom: 1.5rem;
+      padding-right: 22rem;
+    }
+  }
+}
