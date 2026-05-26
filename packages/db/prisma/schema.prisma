@@ -19,6 +19,8 @@ model User {
   positions    Position[]
   buyerTrades  Trade[]    @relation("BuyerTrades")
   sellerTrades Trade[]    @relation("SellerTrades")
+  comments     Comment[]
+  commentVotes CommentVote[]
 }
 
 model Wallet {
@@ -39,17 +41,22 @@ model Sport {
 }
 
 model Event {
-  id         String      @id @default(cuid())
-  sportId    String
-  sport      Sport       @relation(fields: [sportId], references: [id])
-  externalId String      // ESPN event ID
-  homeTeam   String
-  awayTeam   String
-  startsAt   DateTime
-  status     EventStatus @default(SCHEDULED)
-  homeScore  Int?
-  awayScore  Int?
-  resolvedAt DateTime?
+  id             String      @id @default(cuid())
+  sportId        String
+  sport          Sport       @relation(fields: [sportId], references: [id])
+  externalId     String      // ESPN event ID
+  homeTeam       String
+  awayTeam       String
+  startsAt       DateTime
+  status         EventStatus @default(SCHEDULED)
+  homeScore      Int?
+  awayScore      Int?
+  resolvedAt     DateTime?
+  // Snapshot of ESPN odds at last poll — used by bots for fair-value pricing.
+  spread         Float?
+  overUnder      Float?
+  homeMoneyLine  Int?
+  awayMoneyLine  Int?
 
   markets    Market[]
 
@@ -84,6 +91,7 @@ model Market {
   orders    Order[]
   trades    Trade[]
   positions Position[]
+  comments  Comment[]
 
   @@index([status])
   @@index([eventId])
@@ -185,4 +193,33 @@ model Position {
 
   @@unique([userId, marketId])
   @@index([userId])
+}
+
+// ─── Social ──────────────────────────────────────────────────────────────
+model Comment {
+  id        String   @id @default(cuid())
+  marketId  String
+  market    Market   @relation(fields: [marketId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+
+  votes CommentVote[]
+
+  @@index([marketId, createdAt])
+  @@index([userId])
+}
+
+model CommentVote {
+  id        String   @id @default(cuid())
+  commentId String
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  value     Int      // +1 or -1
+  createdAt DateTime @default(now())
+
+  @@unique([commentId, userId])
+  @@index([commentId])
 }
