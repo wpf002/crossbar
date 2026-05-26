@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../lib/errors.js';
+import { computeEquitySeries } from '../lib/equity.js';
 
 const PaginationSchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
@@ -166,6 +167,15 @@ export default async function meRoutes(fastify: FastifyInstance): Promise<void> 
       skip: offset,
     });
     return { trades: trades.map(serializeTrade), limit, offset };
+  });
+
+  fastify.get('/equity', async (req) => {
+    const { hours } = z
+      .object({
+        hours: z.coerce.number().int().positive().max(720).default(168),
+      })
+      .parse(req.query);
+    return computeEquitySeries(prisma, req.user.id, hours);
   });
 
   fastify.get('/orders', async (req) => {
