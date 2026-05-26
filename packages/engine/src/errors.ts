@@ -48,3 +48,21 @@ export class SelfTradeError extends EngineError {
     super('SELF_TRADE', message);
   }
 }
+
+export class MarketAlreadyClosedError extends EngineError {
+  constructor(marketId: string) {
+    super('MARKET_ALREADY_CLOSED', `Market ${marketId} is already closed or settled`);
+  }
+}
+
+export class MarketAlreadyResolvedError extends EngineError {
+  constructor(marketId: string) {
+    super('MARKET_ALREADY_RESOLVED', `Market ${marketId} is already resolved`);
+  }
+}
+
+export class MarketNotFoundError extends EngineError {
+  constructor(marketId: string) {
+    super('MARKET_NOT_FOUND', `Market ${marketId} not found`);
+  }
+}
