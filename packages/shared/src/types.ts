@@ -32,4 +32,11 @@ export interface SportEvent {
   status: 'SCHEDULED' | 'LIVE' | 'FINAL' | 'POSTPONED' | 'CANCELED';
   homeScore?: number;
   awayScore?: number;
+  /** Spread: negative = home favored (e.g. home -3.5 means -3.5). */
+  spread?: number;
+  /** Combined points/runs/goals line for OVER/UNDER. */
+  overUnder?: number;
+  /** American moneyline odds, e.g. -150 (favorite) or +130 (underdog). */
+  homeMoneyLine?: number;
+  awayMoneyLine?: number;
 }
