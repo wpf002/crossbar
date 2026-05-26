@@ -3,6 +3,8 @@ import { PlaceOrderSchema } from '@crossbar/shared';
 import { cancelOrder, placeOrder, type EngineContext } from '@crossbar/engine';
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../lib/errors.js';
+import type { EventBus } from '../lib/events.js';
+import { publishCancelEffects, publishOrderEffects } from '../lib/publish-effects.js';
 
 interface SerializableOrder {
   id: string;
@@ -58,7 +60,7 @@ function serializeTrade(t: SerializableTrade) {
   };
 }
 
-export default function ordersRoutes(engineCtx: EngineContext) {
+export default function ordersRoutes(engineCtx: EngineContext, bus: EventBus) {
   return async function (fastify: FastifyInstance): Promise<void> {
     fastify.addHook('preHandler', fastify.authenticate);
 
@@ -70,6 +72,15 @@ export default function ordersRoutes(engineCtx: EngineContext) {
       // instead of calling the engine directly here. The matcher already
       // subscribes — see apps/matcher/src/index.ts:42.
       const result = await placeOrder(input, req.user.id, engineCtx);
+
+      await publishOrderEffects(
+        bus,
+        prisma,
+        engineCtx,
+        input.marketId,
+        result.order,
+        result.fills,
+      );
 
       return {
         order: serializeOrder(result.order),
@@ -87,6 +98,9 @@ export default function ordersRoutes(engineCtx: EngineContext) {
       }
 
       const updated = await cancelOrder(req.params.id, req.user.id, engineCtx);
+
+      await publishCancelEffects(bus, prisma, engineCtx, updated);
+
       return { order: serializeOrder(updated) };
     });
   };

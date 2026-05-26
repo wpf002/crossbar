@@ -15,6 +15,7 @@ export default defineConfig({
       DATABASE_URL: TEST_DATABASE_URL,
       NODE_ENV: 'test',
       JWT_SECRET: 'test-jwt-secret-1234567890',
+      REDIS_URL: process.env.TEST_REDIS_URL ?? 'redis://localhost:6379',
     },
     testTimeout: 30000,
     hookTimeout: 60000,

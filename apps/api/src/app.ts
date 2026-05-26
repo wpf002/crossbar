@@ -13,14 +13,19 @@ import ordersRoutes from './routes/orders.js';
 import commentsRoutes from './routes/comments.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import botsRoutes from './routes/bots.js';
+import sseRoutes from './routes/sse.js';
+import adminRoutes from './routes/admin.js';
 import { prisma } from './lib/prisma.js';
 import { mapError } from './lib/errors.js';
 import { loadEnv, type Env } from './env.js';
+import { createEventBus, nullEventBus, type EventBus } from './lib/events.js';
 
 export interface BuildAppOptions {
   env?: Env;
   /** Override the engine context (useful in tests). */
   engineCtx?: EngineContext;
+  /** Override the event bus (useful in tests). */
+  bus?: EventBus;
 }
 
 export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -43,6 +48,13 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     books: new Map(),
   };
 
+  const bus: EventBus =
+    opts.bus ?? (env.REDIS_URL ? createEventBus(env.REDIS_URL) : nullEventBus());
+
+  app.addHook('onClose', async () => {
+    await bus.close();
+  });
+
   app.setErrorHandler((err, _req, reply) => {
     const { status, body } = mapError(err);
     if (status >= 500) app.log.error({ err }, 'unhandled error');
@@ -59,10 +71,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(authRoutes, { prefix: '/auth' });
   await app.register(meRoutes, { prefix: '/me' });
   await app.register(marketsRoutes(engineCtx), { prefix: '/markets' });
-  await app.register(ordersRoutes(engineCtx), { prefix: '/orders' });
+  await app.register(ordersRoutes(engineCtx, bus), { prefix: '/orders' });
   await app.register(commentsRoutes);
   await app.register(leaderboardRoutes);
   await app.register(botsRoutes);
+  await app.register(sseRoutes({ engineCtx, bus }));
+  await app.register(adminRoutes({ engineCtx, bus }), { prefix: '/admin' });
 
   return app;
 }
