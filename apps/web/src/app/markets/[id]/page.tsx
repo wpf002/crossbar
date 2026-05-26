@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useMarketStream, useMeStream } from '@/lib/sse';
 import type { Position } from '@/lib/types';
 import { OrderBookView } from '@/components/order-book';
 import { PriceChart } from '@/components/price-chart';
@@ -24,20 +25,24 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
   const { setLeg } = useSlip();
   const [chartHours, setChartHours] = useState<number>(24);
 
+  useMarketStream(id);
+  useMeStream();
+
   const marketQ = useQuery({
     queryKey: ['market', id],
     queryFn: () => api.market(id),
-    refetchInterval: 10_000,
+    // SSE keeps book/trades hot; a 30s safety refetch covers any drift.
+    refetchInterval: 30_000,
   });
   const bookQ = useQuery({
     queryKey: ['book', id],
     queryFn: () => api.marketBook(id),
-    refetchInterval: 3_000,
+    refetchInterval: 30_000,
   });
   const tradesQ = useQuery({
     queryKey: ['trades', id],
     queryFn: () => api.marketTrades(id, { limit: 20 }),
-    refetchInterval: 5_000,
+    refetchInterval: 30_000,
   });
   const candlesQ = useQuery({
     queryKey: ['candles', id, chartHours],
@@ -51,7 +56,7 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
       return all.find((p) => p.marketId === id) ?? null;
     },
     enabled: !!token,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
 
   const market = marketQ.data;

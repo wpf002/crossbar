@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Wallet as WalletIcon, Lock, Coins } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useMeStream } from '@/lib/sse';
 import { Card, CardSubtitle, CardTitle } from '@/components/ui/card';
 import { formatDollars } from '@/lib/format';
 
@@ -17,11 +18,13 @@ export default function WalletPage(): JSX.Element | null {
     if (!loading && !token) router.replace('/login');
   }, [loading, token, router]);
 
+  useMeStream();
+
   const { data, isLoading } = useQuery({
     queryKey: ['wallet', token],
     queryFn: () => api.wallet(),
     enabled: !!token,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
 
   if (loading || !token) return null;

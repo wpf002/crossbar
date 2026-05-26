@@ -5,15 +5,17 @@ import { Wallet as WalletIcon } from 'lucide-react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useMeStream } from '@/lib/sse';
 import { formatDollars } from '@/lib/format';
 
 export function WalletPill(): JSX.Element | null {
   const { token } = useAuth();
+  useMeStream();
   const { data } = useQuery({
     queryKey: ['wallet', token],
     queryFn: () => api.wallet(),
     enabled: !!token,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 
   if (!token) return null;

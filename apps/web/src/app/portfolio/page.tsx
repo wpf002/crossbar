@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useMeStream } from '@/lib/sse';
 import type { Position } from '@/lib/types';
 import { Card, CardSubtitle } from '@/components/ui/card';
 import { OrderRow } from '@/components/order-row';
 import { PositionRow } from '@/components/position-row';
 import { TradeRow } from '@/components/trade-row';
+import { EquityChart } from '@/components/equity-chart';
 import { formatDollars } from '@/lib/format';
 import { cn } from '@/lib/cn';
 
@@ -24,29 +26,32 @@ export default function PortfolioPage(): JSX.Element | null {
     if (!loading && !token) router.replace('/login');
   }, [loading, token, router]);
 
+  useMeStream();
+
+  // 30s safety refetch — SSE keeps these caches hot in normal operation.
   const ordersQ = useQuery({
     queryKey: ['my-orders', 'open', token],
     queryFn: () => api.myOrders({ status: 'OPEN,PARTIAL', limit: 50 }),
     enabled: !!token,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
   const positionsQ = useQuery({
     queryKey: ['positions', token],
     queryFn: () => api.positions(),
     enabled: !!token,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
   const tradesQ = useQuery({
     queryKey: ['my-trades', token],
     queryFn: () => api.myTrades({ limit: 50 }),
     enabled: !!token,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
   const walletQ = useQuery({
     queryKey: ['wallet', token],
     queryFn: () => api.wallet(),
     enabled: !!token,
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
 
   const stats = useMemo(() => computeStats(positionsQ.data ?? [], walletQ.data?.balance ?? 0), [positionsQ.data, walletQ.data]);
@@ -56,6 +61,8 @@ export default function PortfolioPage(): JSX.Element | null {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight">Portfolio</h1>
+
+      <EquityChart />
 
       {/* Top stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

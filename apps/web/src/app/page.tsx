@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useMarketsListStream } from '@/lib/sse';
 import type { MarketListItem, SportId } from '@/lib/types';
 import { SportTabs } from '@/components/sport-tabs';
 import { GameRow } from '@/components/game-row';
@@ -11,10 +12,12 @@ import { formatDollars } from '@/lib/format';
 export default function HomePage(): JSX.Element {
   const [sport, setSport] = useState<'ALL' | SportId>('ALL');
 
+  useMarketsListStream();
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['markets', sport],
     queryFn: () => api.listMarkets(sport === 'ALL' ? {} : { sport }),
-    refetchInterval: 10_000,
+    refetchInterval: 30_000,
   });
 
   const grouped = useMemo(() => groupByEvent(filterUpcoming(data ?? [])), [data]);
