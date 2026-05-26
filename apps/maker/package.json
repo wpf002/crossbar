@@ -1,0 +1,26 @@
+{
+  "name": "@crossbar/maker",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "simulate": "tsx scripts/simulate.ts"
+  },
+  "dependencies": {
+    "@crossbar/bots": "workspace:*",
+    "@crossbar/db": "workspace:*",
+    "@crossbar/shared": "workspace:*",
+    "@prisma/client": "^7.8.0",
+    "node-cron": "^3.0.3",
+    "pino": "^9.3.2",
+    "pino-pretty": "^11.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}
