@@ -2,14 +2,44 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '@crossbar/db';
 import { buildApp } from './app.js';
 
-export async function makeApp(): Promise<FastifyInstance> {
+export interface MakeAppOpts {
+  /** Wire the real Redis-backed event bus. Required for SSE tests. */
+  withRedis?: boolean;
+}
+
+export async function makeApp(opts: MakeAppOpts = {}): Promise<FastifyInstance> {
   return buildApp({
     env: {
       NODE_ENV: 'test',
       API_PORT: 4000,
       JWT_SECRET: 'test-jwt-secret-1234567890',
+      ...(opts.withRedis
+        ? { REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379' }
+        : {}),
     },
   });
+}
+
+export async function makeAdminUser(
+  app: FastifyInstance,
+  overrides: Partial<{ email: string; username: string; password: string }> = {},
+): Promise<SignedUpUser> {
+  const u = await signupUser(app, overrides);
+  await prisma.user.update({ where: { id: u.id }, data: { isAdmin: true } });
+  // Re-login to get a JWT that carries isAdmin: true.
+  const res = await app.inject({
+    method: 'POST',
+    url: '/auth/login',
+    payload: {
+      email: u.email,
+      password: overrides.password ?? 'correct-horse-battery',
+    },
+  });
+  if (res.statusCode !== 200) {
+    throw new Error(`re-login failed: ${res.statusCode} ${res.payload}`);
+  }
+  const parsed = res.json() as { token: string };
+  return { ...u, token: parsed.token };
 }
 
 export interface SignedUpUser {
