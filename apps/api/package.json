@@ -10,6 +10,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@crossbar/bots": "workspace:*",
     "@crossbar/db": "workspace:*",
     "@crossbar/engine": "workspace:*",
     "@crossbar/shared": "workspace:*",

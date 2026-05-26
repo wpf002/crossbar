@@ -10,6 +10,9 @@ import authRoutes from './routes/auth.js';
 import meRoutes from './routes/me.js';
 import marketsRoutes from './routes/markets.js';
 import ordersRoutes from './routes/orders.js';
+import commentsRoutes from './routes/comments.js';
+import leaderboardRoutes from './routes/leaderboard.js';
+import botsRoutes from './routes/bots.js';
 import { prisma } from './lib/prisma.js';
 import { mapError } from './lib/errors.js';
 import { loadEnv, type Env } from './env.js';
@@ -57,6 +60,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(meRoutes, { prefix: '/me' });
   await app.register(marketsRoutes(engineCtx), { prefix: '/markets' });
   await app.register(ordersRoutes(engineCtx), { prefix: '/orders' });
+  await app.register(commentsRoutes);
+  await app.register(leaderboardRoutes);
+  await app.register(botsRoutes);
 
   return app;
 }
