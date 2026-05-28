@@ -289,3 +289,121 @@ describe('POST /admin/users/:id/topup', () => {
     expect(res.statusCode).toBe(409);
   });
 });
+
+describe('GET /admin/calibration', () => {
+  /** Create a resolved market with a known YES closing price + outcome. */
+  async function resolvedMarket(opts: {
+    yesClose: number;
+    outcome: 'YES' | 'NO';
+    buyerId: string;
+    sellerId: string;
+    resolvedAt?: Date;
+  }): Promise<void> {
+    await prisma.sport.upsert({ where: { id: 'mlb' }, update: {}, create: { id: 'mlb', name: 'MLB' } });
+    const event = await prisma.event.create({
+      data: {
+        sportId: 'mlb',
+        externalId: `evt-cal-${Date.now()}-${Math.random()}`,
+        homeTeam: 'H',
+        awayTeam: 'A',
+        startsAt: new Date(Date.now() - 3 * 3600_000),
+      },
+    });
+    const closedAt = opts.resolvedAt ?? new Date(Date.now() - 3600_000);
+    const market = await prisma.market.create({
+      data: {
+        eventId: event.id,
+        type: 'MONEYLINE',
+        question: 'q',
+        yesLabel: 'Y',
+        noLabel: 'N',
+        status: 'RESOLVED',
+        outcome: opts.outcome,
+        closedAt,
+        resolvedAt: closedAt,
+      },
+    });
+    // Closing trade: a YES trade at `yesClose`, just before the market closed.
+    await prisma.trade.create({
+      data: {
+        marketId: market.id,
+        outcome: 'YES',
+        price: opts.yesClose,
+        quantity: 1,
+        buyerUserId: opts.buyerId,
+        sellerUserId: opts.sellerId,
+        createdAt: new Date(closedAt.getTime() - 60_000),
+      },
+    });
+  }
+
+  it('buckets markets and computes Brier + calibration error', async () => {
+    const admin = await makeAdminUser(app);
+    const buyer = await signupUser(app);
+    const seller = await signupUser(app);
+
+    // Bin 60-69 (midpoint 65): 4 markets close@65, 2 YES / 2 NO.
+    for (let i = 0; i < 2; i++) {
+      await resolvedMarket({ yesClose: 65, outcome: 'YES', buyerId: buyer.id, sellerId: seller.id });
+      await resolvedMarket({ yesClose: 65, outcome: 'NO', buyerId: buyer.id, sellerId: seller.id });
+    }
+    // Bin 20-29 (midpoint 25): 4 markets close@25, 1 YES / 3 NO.
+    await resolvedMarket({ yesClose: 25, outcome: 'YES', buyerId: buyer.id, sellerId: seller.id });
+    for (let i = 0; i < 3; i++) {
+      await resolvedMarket({ yesClose: 25, outcome: 'NO', buyerId: buyer.id, sellerId: seller.id });
+    }
+
+    // Unique days key avoids the 5-min in-memory cache colliding with other tests.
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/calibration?days=31',
+      headers: bearer(admin.token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      totalMarkets: number;
+      brierScore: number;
+      calibrationError: number;
+      buckets: Array<{ bin: string; midpoint: number; sampleSize: number; actualYesProb: number; brierContrib: number }>;
+    };
+
+    expect(body.totalMarkets).toBe(8);
+    // brierScore = (2·0.1225 + 2·0.4225 + 1·0.5625 + 3·0.0625) / 8 = 1.84/8 = 0.23
+    expect(body.brierScore).toBeCloseTo(0.23, 4);
+    // calibrationError = (4/8)|0.5-0.65| + (4/8)|0.25-0.25| = 0.075
+    expect(body.calibrationError).toBeCloseTo(0.075, 4);
+
+    expect(body.buckets).toHaveLength(2);
+    const low = body.buckets.find((b) => b.bin === '20-29')!;
+    const high = body.buckets.find((b) => b.bin === '60-69')!;
+    expect(low.sampleSize).toBe(4);
+    expect(low.midpoint).toBe(25);
+    expect(low.actualYesProb).toBeCloseTo(0.25, 4);
+    expect(high.sampleSize).toBe(4);
+    expect(high.midpoint).toBe(65);
+    expect(high.actualYesProb).toBeCloseTo(0.5, 4);
+  });
+
+  it('returns 403 for a non-admin', async () => {
+    const user = await signupUser(app);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/calibration',
+      headers: bearer(user.token),
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns zero markets and null Brier for an empty window', async () => {
+    const admin = await makeAdminUser(app);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/calibration?days=17',
+      headers: bearer(admin.token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { totalMarkets: number; brierScore: number | null };
+    expect(body.totalMarkets).toBe(0);
+    expect(body.brierScore).toBeNull();
+  });
+});

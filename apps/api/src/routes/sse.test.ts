@@ -151,6 +151,27 @@ describe('GET /sse/markets/:id', () => {
     const res = await fetch(`${baseUrl}/sse/markets/does-not-exist`);
     expect(res.status).toBe(404);
   });
+
+  it('sends a first-connect book snapshot read from Redis (post-cutover)', async () => {
+    const user = await signupUser(app);
+    const marketId = await makeOpenMarket();
+
+    // Rest a bid through the matcher so it writes the snapshot key.
+    await app.inject({
+      method: 'POST',
+      url: '/orders',
+      headers: bearer(user.token),
+      payload: { marketId, side: 'BUY', outcome: 'YES', price: 60, quantity: 7 },
+    });
+
+    const client = await openSseClient(`${baseUrl}/sse/markets/${marketId}`);
+    const bookEvt = await client.waitFor((e) => e.event === 'book');
+    const book = JSON.parse(bookEvt.data) as { yesBids: Array<{ price: number; quantity: number }> };
+    expect(book.yesBids[0]?.price).toBe(60);
+    expect(book.yesBids[0]?.quantity).toBe(7);
+
+    client.close();
+  });
 });
 
 describe('GET /sse/me', () => {

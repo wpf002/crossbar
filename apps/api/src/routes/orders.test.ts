@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@crossbar/db';
 import { bearer, makeApp, makeClosedMarket, makeOpenMarket, signupUser } from '../test-helpers.js';
+import { buildApp } from '../app.js';
+import { createMatcherClient } from '../lib/matcher-client.js';
 
 let app: FastifyInstance;
 
@@ -259,4 +261,81 @@ describe('matching', () => {
     expect(noWallet.balance).toBe(100_000 - 40 * 5);
     expect(noWallet.reserved).toBe(0);
   });
+});
+
+describe('matcher cutover end-to-end', () => {
+  it('places an order through the matcher and replies within 1s, then releases on cancel', async () => {
+    const user = await signupUser(app);
+    const marketId = await makeOpenMarket();
+
+    const start = Date.now();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/orders',
+      headers: bearer(user.token),
+      payload: { marketId, side: 'BUY', outcome: 'YES', price: 50, quantity: 10 },
+    });
+    const elapsed = Date.now() - start;
+
+    expect(res.statusCode).toBe(200);
+    expect(elapsed).toBeLessThan(1000);
+    const body = res.json() as { order: { id: string }; fills: unknown[] };
+    expect(body.order.id).toBeTruthy();
+    expect(Array.isArray(body.fills)).toBe(true);
+
+    const reserved = await prisma.wallet.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(reserved.reserved).toBe(500);
+
+    const cancel = await app.inject({
+      method: 'DELETE',
+      url: `/orders/${body.order.id}`,
+      headers: bearer(user.token),
+    });
+    expect(cancel.statusCode).toBe(200);
+
+    const after = await prisma.wallet.findUniqueOrThrow({ where: { userId: user.id } });
+    expect(after.balance).toBe(100_000);
+    expect(after.reserved).toBe(0);
+  });
+});
+
+describe('matcher unavailable', () => {
+  it('returns 504 GATEWAY_TIMEOUT when no matcher consumes the request', async () => {
+    // Point the client at a stream no matcher consumes, so the request lands on
+    // Redis but the reply never arrives and BLPOP times out. (Using the real
+    // stream would let the suite's in-process matcher answer it.)
+    const deadClient = createMatcherClient(
+      process.env.REDIS_URL ?? 'redis://localhost:6379',
+      `orders:incoming:dead-${Math.random().toString(36).slice(2)}`,
+    );
+    const lonelyApp = await buildApp({
+      env: {
+        NODE_ENV: 'test',
+        API_PORT: 4000,
+        JWT_SECRET: 'test-jwt-secret-1234567890',
+        REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379',
+      },
+      matcher: deadClient,
+    });
+    try {
+      const user = await signupUser(lonelyApp);
+      const marketId = await makeOpenMarket();
+
+      const start = Date.now();
+      const res = await lonelyApp.inject({
+        method: 'POST',
+        url: '/orders',
+        headers: bearer(user.token),
+        payload: { marketId, side: 'BUY', outcome: 'YES', price: 50, quantity: 10 },
+      });
+      const elapsed = Date.now() - start;
+
+      expect(res.statusCode).toBe(504);
+      expect(res.json()).toMatchObject({ error: 'GATEWAY_TIMEOUT' });
+      expect(elapsed).toBeGreaterThanOrEqual(4500);
+      expect(elapsed).toBeLessThan(7000);
+    } finally {
+      await lonelyApp.close();
+    }
+  }, 15_000);
 });

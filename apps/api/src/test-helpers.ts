@@ -1,23 +1,56 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '@crossbar/db';
+import { runMatcher, type MatcherHandle } from '@crossbar/matcher';
 import { buildApp } from './app.js';
 
 export interface MakeAppOpts {
   /** Wire the real Redis-backed event bus. Required for SSE tests. */
   withRedis?: boolean;
+  /**
+   * Boot an in-process matcher consuming the same Redis stream the API writes
+   * to. Defaults to true: post-cutover, `POST /orders` and admin lifecycle
+   * actions are answered by the matcher, so almost every test needs one. Set
+   * false to exercise the GATEWAY_TIMEOUT path.
+   */
+  withMatcher?: boolean;
 }
 
+const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
+let consumerSeq = 0;
+
+/**
+ * Build the API and (by default) an in-process matcher bound to the same Redis.
+ * The matcher handle is stopped automatically when the app closes, so test
+ * files keep their existing `beforeAll`/`afterAll` lifecycle unchanged.
+ */
 export async function makeApp(opts: MakeAppOpts = {}): Promise<FastifyInstance> {
-  return buildApp({
+  const withMatcher = opts.withMatcher ?? true;
+  // The API always needs Redis to reach the matcher; only the explicit
+  // no-matcher timeout test opts out of pub/sub.
+  const useRedis = opts.withRedis ?? withMatcher;
+
+  const app = await buildApp({
     env: {
       NODE_ENV: 'test',
       API_PORT: 4000,
       JWT_SECRET: 'test-jwt-secret-1234567890',
-      ...(opts.withRedis
-        ? { REDIS_URL: process.env.REDIS_URL ?? 'redis://localhost:6379' }
-        : {}),
+      ...(useRedis ? { REDIS_URL } : {}),
     },
   });
+
+  if (withMatcher) {
+    const matcher: MatcherHandle = await runMatcher({
+      redisUrl: REDIS_URL,
+      consumerName: `test-consumer-${process.pid}-${consumerSeq++}`,
+      resetStream: true,
+      silent: true,
+    });
+    app.addHook('onClose', async () => {
+      await matcher.stop();
+    });
+  }
+
+  return app;
 }
 
 export async function makeAdminUser(

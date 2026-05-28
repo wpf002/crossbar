@@ -15,7 +15,9 @@ export default defineConfig({
       DATABASE_URL: TEST_DATABASE_URL,
       NODE_ENV: 'test',
       JWT_SECRET: 'test-jwt-secret-1234567890',
-      REDIS_URL: process.env.TEST_REDIS_URL ?? 'redis://localhost:6379',
+      // Separate Redis DB from dev (db0) so `pnpm dev` and the test suite
+      // can run at the same time without fighting over the orders stream.
+      REDIS_URL: process.env.TEST_REDIS_URL ?? 'redis://localhost:6379/1',
     },
     testTimeout: 30000,
     hookTimeout: 60000,
