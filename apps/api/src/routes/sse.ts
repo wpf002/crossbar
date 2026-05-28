@@ -1,10 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import Redis from 'ioredis';
-import { OrderBook, type EngineContext } from '@crossbar/engine';
+import type { OrderBookSnapshot } from '@crossbar/shared';
 import { prisma } from '../lib/prisma.js';
 import {
   LAST_TRADE_CHANNEL,
   bookChannel,
+  bookSnapshotKey,
   orderChannel,
   positionChannelPattern,
   tradesChannel,
@@ -12,8 +13,25 @@ import {
   type EventBus,
 } from '../lib/events.js';
 interface SseDeps {
-  engineCtx: EngineContext;
+  /** General-purpose Redis client for reading book snapshots (null in no-redis mode). */
+  redis: Redis | null;
   bus: EventBus;
+}
+
+function emptySnapshot(marketId: string): OrderBookSnapshot {
+  return { marketId, yesBids: [], yesAsks: [], noBids: [], noAsks: [] };
+}
+
+/** Read the latest persisted book snapshot the matcher writes to Redis. */
+async function readBookSnapshot(redis: Redis | null, marketId: string): Promise<OrderBookSnapshot> {
+  if (!redis) return emptySnapshot(marketId);
+  const raw = await redis.get(bookSnapshotKey(marketId));
+  if (!raw) return emptySnapshot(marketId);
+  try {
+    return JSON.parse(raw) as OrderBookSnapshot;
+  } catch {
+    return emptySnapshot(marketId);
+  }
 }
 
 interface JwtPayload {
@@ -70,7 +88,7 @@ function subscriberFor(redisUrl: string): Redis {
 }
 
 export default function sseRoutes(deps: SseDeps) {
-  const { engineCtx, bus } = deps;
+  const { redis, bus } = deps;
 
   return async function (fastify: FastifyInstance): Promise<void> {
     // ─── public: per-market book + trades ────────────────────────────────
@@ -88,8 +106,8 @@ export default function sseRoutes(deps: SseDeps) {
         }
 
         const conn = openSse(reply);
-        const book = engineCtx.books.get(marketId) ?? new OrderBook(marketId);
-        conn.send('book', book.snapshot());
+        const snapshot = await readBookSnapshot(redis, marketId);
+        conn.send('book', snapshot);
 
         if (!bus.redisUrl) {
           conn.comment('pubsub disabled — book snapshot above is one-shot');

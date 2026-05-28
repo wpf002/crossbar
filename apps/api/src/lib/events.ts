@@ -68,6 +68,16 @@ export function orderChannel(userId: string): string {
   return `user:${userId}:order`;
 }
 
+/**
+ * Plain Redis key holding the latest JSON book snapshot for a market. The
+ * matcher writes it on every book change (apps/matcher/src/events.ts must keep
+ * this string identical); the API reads it for REST book queries + SSE
+ * first-connect snapshots since it no longer holds in-memory books.
+ */
+export function bookSnapshotKey(marketId: string): string {
+  return `market:${marketId}:book:snapshot`;
+}
+
 function serializeTrade(t: Trade): SerializedTrade {
   return {
     id: t.id,

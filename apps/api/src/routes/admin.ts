@@ -1,20 +1,25 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import {
-  closeMarket,
-  createMarket,
-  resolveMarket,
-  voidMarket,
-  type EngineContext,
-} from '@crossbar/engine';
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../lib/errors.js';
 import type { EventBus } from '../lib/events.js';
-import { publishLifecycleEffects } from '../lib/publish-effects.js';
+import type { MatcherClient } from '../lib/matcher-client.js';
 
 interface AdminDeps {
-  engineCtx: EngineContext;
+  matcher: MatcherClient;
   bus: EventBus;
+}
+
+interface MarketBrief {
+  id: string;
+  type: string;
+  question: string;
+  line: number | null;
+  status: string;
+  outcome: string | null;
+  closedAt: string | null;
+  resolvedAt: string | null;
+  eventId: string;
 }
 
 const CreateMarketSchema = z.object({
@@ -48,11 +53,15 @@ const PaginationSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 });
 
+const CalibrationQuery = z.object({
+  days: z.coerce.number().int().positive().max(36500).default(30),
+});
+
 const MarketStatusEnum = z.enum(['OPEN', 'CLOSED', 'RESOLVED', 'VOIDED']);
 const EventStatusEnum = z.enum(['SCHEDULED', 'LIVE', 'FINAL', 'POSTPONED', 'CANCELED']);
 
 export default function adminRoutes(deps: AdminDeps) {
-  const { engineCtx, bus } = deps;
+  const { matcher, bus } = deps;
 
   return async function (fastify: FastifyInstance): Promise<void> {
     fastify.addHook('preHandler', fastify.requireAdmin);
@@ -79,6 +88,12 @@ export default function adminRoutes(deps: AdminDeps) {
       }
       const volume24h = volumeRows.reduce((a, t) => a + t.price * t.quantity, 0);
       return { marketsByStatus: byStatus, userCount, volume24h };
+    });
+
+    // ─── Calibration ──────────────────────────────────────────────────────
+    fastify.get('/calibration', async (req) => {
+      const { days } = CalibrationQuery.parse(req.query);
+      return getCalibration(days);
     });
 
     // ─── Markets ──────────────────────────────────────────────────────────
@@ -139,55 +154,33 @@ export default function adminRoutes(deps: AdminDeps) {
 
     fastify.post('/markets', async (req) => {
       const input = CreateMarketSchema.parse(req.body);
-      const market = await createMarket(prisma, input);
-      return { market: serializeMarket(market) };
+      return matcher.request<{ market: MarketBrief }>('create_market', req.user.id, input);
     });
 
     fastify.post<{ Params: { id: string } }>('/markets/:id/close', async (req) => {
-      const result = await closeMarket(prisma, req.params.id);
-      await publishLifecycleEffects(
-        bus,
-        prisma,
-        engineCtx,
-        req.params.id,
-        result.canceledOrders.map((o) => o.userId),
+      return matcher.request<{ market: MarketBrief; canceledOrderIds: string[] }>(
+        'close_market',
+        req.user.id,
+        { marketId: req.params.id },
       );
-      return {
-        market: serializeMarket(result.market),
-        canceledOrderIds: result.canceledOrders.map((o) => o.id),
-      };
     });
 
     fastify.post<{ Params: { id: string } }>('/markets/:id/resolve', async (req) => {
       const { outcome } = ResolveSchema.parse(req.body);
-      const result = await resolveMarket(prisma, req.params.id, outcome);
-      await publishLifecycleEffects(
-        bus,
-        prisma,
-        engineCtx,
-        req.params.id,
-        result.payouts.map((p) => p.userId),
+      return matcher.request<{ market: MarketBrief; payouts: unknown[] }>(
+        'resolve_market',
+        req.user.id,
+        { marketId: req.params.id, outcome },
       );
-      return {
-        market: serializeMarket(result.market),
-        payouts: result.payouts,
-      };
     });
 
     fastify.post<{ Params: { id: string } }>('/markets/:id/void', async (req) => {
       const { reason } = VoidSchema.parse(req.body);
-      const result = await voidMarket(prisma, req.params.id, reason);
-      await publishLifecycleEffects(
-        bus,
-        prisma,
-        engineCtx,
-        req.params.id,
-        result.refunds.map((r) => r.userId),
+      return matcher.request<{ market: MarketBrief; refunds: unknown[] }>(
+        'void_market',
+        req.user.id,
+        { marketId: req.params.id, reason },
       );
-      return {
-        market: serializeMarket(result.market),
-        refunds: result.refunds,
-      };
     });
 
     // ─── Events ───────────────────────────────────────────────────────────
@@ -238,17 +231,12 @@ export default function adminRoutes(deps: AdminDeps) {
         where: { eventId: event.id, status: { in: ['OPEN', 'CLOSED'] } },
       });
 
+      // Resolve each market through the matcher so book teardown + effects run
+      // in the same place as every other lifecycle transition.
       const resolved: Array<{ marketId: string; outcome: string }> = [];
       for (const market of markets) {
         const outcome = computeOutcome(market, event);
-        const result = await resolveMarket(prisma, market.id, outcome);
-        await publishLifecycleEffects(
-          bus,
-          prisma,
-          engineCtx,
-          market.id,
-          result.payouts.map((p) => p.userId),
-        );
+        await matcher.request('resolve_market', 'system', { marketId: market.id, outcome });
         resolved.push({ marketId: market.id, outcome });
       }
 
@@ -349,26 +337,125 @@ function computeOutcome(
   return 'INVALID';
 }
 
-function serializeMarket(m: {
-  id: string;
-  type: string;
-  question: string;
-  line: number | null;
-  status: string;
-  outcome: string | null;
-  closedAt: Date | null;
-  resolvedAt: Date | null;
-  eventId: string;
-}) {
+// ─── Calibration computation ──────────────────────────────────────────────
+
+interface CalibrationBucket {
+  bin: string;
+  midpoint: number;
+  sampleSize: number;
+  expectedYesProb: number;
+  actualYesProb: number;
+  brierContrib: number;
+}
+
+interface CalibrationResult {
+  windowDays: number;
+  totalMarkets: number;
+  brierScore: number | null;
+  calibrationError: number | null;
+  buckets: CalibrationBucket[];
+}
+
+const CALIBRATION_TTL_MS = 5 * 60_000;
+const calibrationCache = new Map<number, { at: number; value: CalibrationResult }>();
+
+async function getCalibration(days: number): Promise<CalibrationResult> {
+  const cached = calibrationCache.get(days);
+  if (cached && Date.now() - cached.at < CALIBRATION_TTL_MS) {
+    return cached.value;
+  }
+  const value = await computeCalibration(days);
+  calibrationCache.set(days, { at: Date.now(), value });
+  return value;
+}
+
+/** Bin a YES closing price (1-99) into a 10¢ decile. */
+function binFor(yesPrice: number): { idx: number; bin: string; midpoint: number } {
+  const idx = Math.min(9, Math.max(0, Math.floor(yesPrice / 10)));
+  const low = idx === 0 ? 1 : idx * 10;
+  const high = idx * 10 + 9;
+  return { idx, bin: `${low}-${high}`, midpoint: idx * 10 + 5 };
+}
+
+async function computeCalibration(days: number): Promise<CalibrationResult> {
+  const since = new Date(Date.now() - days * 24 * 3600_000);
+
+  const markets = await prisma.market.findMany({
+    where: {
+      status: 'RESOLVED',
+      outcome: { in: ['YES', 'NO'] },
+      resolvedAt: { gte: since },
+    },
+    select: { id: true, outcome: true, closedAt: true },
+  });
+
+  interface Acc {
+    sampleSize: number;
+    yesCount: number;
+    brierSum: number; // Σ (yesActual - close/100)^2 over markets in bucket
+  }
+  const buckets = new Map<number, Acc & { midpoint: number; bin: string }>();
+  let totalMarkets = 0;
+  let totalBrierSum = 0;
+
+  for (const m of markets) {
+    // Closing price = the last trade before the market closed (YES-normalized).
+    const lastTrade = await prisma.trade.findFirst({
+      where: {
+        marketId: m.id,
+        ...(m.closedAt ? { createdAt: { lte: m.closedAt } } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { price: true, outcome: true },
+    });
+    if (!lastTrade) continue; // no trades → no closing price → skip
+
+    const yesClose = lastTrade.outcome === 'YES' ? lastTrade.price : 100 - lastTrade.price;
+    const yesActual = m.outcome === 'YES' ? 1 : 0;
+    const { idx, bin, midpoint } = binFor(yesClose);
+
+    const sq = (yesActual - yesClose / 100) ** 2;
+    totalMarkets += 1;
+    totalBrierSum += sq;
+
+    const acc = buckets.get(idx) ?? { sampleSize: 0, yesCount: 0, brierSum: 0, midpoint, bin };
+    acc.sampleSize += 1;
+    acc.yesCount += yesActual;
+    acc.brierSum += sq;
+    buckets.set(idx, acc);
+  }
+
+  if (totalMarkets === 0) {
+    return { windowDays: days, totalMarkets: 0, brierScore: null, calibrationError: null, buckets: [] };
+  }
+
+  const out: CalibrationBucket[] = [];
+  let calibrationError = 0;
+  for (const idx of [...buckets.keys()].sort((a, b) => a - b)) {
+    const acc = buckets.get(idx)!;
+    const expectedYesProb = acc.midpoint / 100;
+    const actualYesProb = acc.yesCount / acc.sampleSize;
+    calibrationError += (acc.sampleSize / totalMarkets) * Math.abs(actualYesProb - expectedYesProb);
+    out.push({
+      bin: acc.bin,
+      midpoint: acc.midpoint,
+      sampleSize: acc.sampleSize,
+      expectedYesProb: round(expectedYesProb, 4),
+      actualYesProb: round(actualYesProb, 4),
+      brierContrib: round(acc.brierSum / totalMarkets, 4),
+    });
+  }
+
   return {
-    id: m.id,
-    type: m.type,
-    question: m.question,
-    line: m.line,
-    status: m.status,
-    outcome: m.outcome,
-    closedAt: m.closedAt?.toISOString() ?? null,
-    resolvedAt: m.resolvedAt?.toISOString() ?? null,
-    eventId: m.eventId,
+    windowDays: days,
+    totalMarkets,
+    brierScore: round(totalBrierSum / totalMarkets, 4),
+    calibrationError: round(calibrationError, 4),
+    buckets: out,
   };
+}
+
+function round(n: number, dp: number): number {
+  const f = 10 ** dp;
+  return Math.round(n * f) / f;
 }

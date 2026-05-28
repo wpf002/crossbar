@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
+import type Redis from 'ioredis';
 import { z } from 'zod';
 import type { OrderBookSnapshot } from '@crossbar/shared';
-import { OrderBook } from '@crossbar/engine';
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../lib/errors.js';
-import type { EngineContext } from '@crossbar/engine';
+import { bookSnapshotKey } from '../lib/events.js';
 
 const ListMarketsQuery = z.object({
   sport: z
@@ -25,7 +25,79 @@ const PaginationSchema = z.object({
 
 const TOP_OF_BOOK_LEVELS = 20;
 
-export default function marketsRoutes(engineCtx: EngineContext) {
+function emptySnapshot(marketId: string): OrderBookSnapshot {
+  return { marketId, yesBids: [], yesAsks: [], noBids: [], noAsks: [] };
+}
+
+/** Read a single market's book snapshot from Redis (matcher-maintained). */
+async function readSnapshot(redis: Redis | null, marketId: string): Promise<OrderBookSnapshot> {
+  if (!redis) return emptySnapshot(marketId);
+  const raw = await redis.get(bookSnapshotKey(marketId));
+  if (!raw) return emptySnapshot(marketId);
+  try {
+    return JSON.parse(raw) as OrderBookSnapshot;
+  } catch {
+    return emptySnapshot(marketId);
+  }
+}
+
+/** Read many snapshots in one round trip via MGET. */
+async function readSnapshots(
+  redis: Redis | null,
+  marketIds: string[],
+): Promise<Map<string, OrderBookSnapshot>> {
+  const out = new Map<string, OrderBookSnapshot>();
+  if (!redis || marketIds.length === 0) {
+    for (const id of marketIds) out.set(id, emptySnapshot(id));
+    return out;
+  }
+  const raws = await redis.mget(marketIds.map(bookSnapshotKey));
+  marketIds.forEach((id, i) => {
+    const raw = raws[i];
+    if (raw) {
+      try {
+        out.set(id, JSON.parse(raw) as OrderBookSnapshot);
+        return;
+      } catch {
+        /* fall through to empty */
+      }
+    }
+    out.set(id, emptySnapshot(id));
+  });
+  return out;
+}
+
+function topOfBook(snap: OrderBookSnapshot) {
+  return {
+    yesBid: snap.yesBids[0]?.price ?? null,
+    yesAsk: snap.yesAsks[0]?.price ?? null,
+    noBid: snap.noBids[0]?.price ?? null,
+    noAsk: snap.noAsks[0]?.price ?? null,
+  };
+}
+
+function depthAt(snap: OrderBookSnapshot) {
+  return {
+    yesBidQty: snap.yesBids[0]?.quantity ?? 0,
+    yesAskQty: snap.yesAsks[0]?.quantity ?? 0,
+    noBidQty: snap.noBids[0]?.quantity ?? 0,
+    noAskQty: snap.noAsks[0]?.quantity ?? 0,
+  };
+}
+
+function truncateLevels(snap: OrderBookSnapshot, limit: number): OrderBookSnapshot {
+  return {
+    marketId: snap.marketId,
+    yesBids: snap.yesBids.slice(0, limit),
+    yesAsks: snap.yesAsks.slice(0, limit),
+    noBids: snap.noBids.slice(0, limit),
+    noAsks: snap.noAsks.slice(0, limit),
+    lastTradePrice: snap.lastTradePrice,
+    lastTradeAt: snap.lastTradeAt,
+  };
+}
+
+export default function marketsRoutes(redis: Redis | null) {
   return async function (fastify: FastifyInstance): Promise<void> {
     fastify.get('/', async (req) => {
       const { sport, type } = ListMarketsQuery.parse(req.query);
@@ -51,34 +123,38 @@ export default function marketsRoutes(engineCtx: EngineContext) {
       });
 
       const ids = markets.map((m) => m.id);
-      const [lastTrades, volumes24h, traderCounts] = await Promise.all([
+      const [lastTrades, volumes24h, traderCounts, snapshots] = await Promise.all([
         lastTradePerMarket(ids),
         volume24hPerMarket(ids),
         traderCountPerMarket(ids),
+        readSnapshots(redis, ids),
       ]);
 
-      return markets.map((m) => ({
-        id: m.id,
-        type: m.type,
-        question: m.question,
-        yesLabel: m.yesLabel,
-        noLabel: m.noLabel,
-        line: m.line,
-        status: m.status,
-        event: {
-          id: m.event.id,
-          sportId: m.event.sportId,
-          homeTeam: m.event.homeTeam,
-          awayTeam: m.event.awayTeam,
-          startsAt: m.event.startsAt.toISOString(),
-          status: m.event.status,
-        },
-        topOfBook: topOfBook(engineCtx, m.id),
-        depth: depthAt(engineCtx, m.id),
-        lastTradePrice: lastTrades.get(m.id) ?? null,
-        volume24h: volumes24h.get(m.id) ?? 0,
-        traders: traderCounts.get(m.id) ?? 0,
-      }));
+      return markets.map((m) => {
+        const snap = snapshots.get(m.id) ?? emptySnapshot(m.id);
+        return {
+          id: m.id,
+          type: m.type,
+          question: m.question,
+          yesLabel: m.yesLabel,
+          noLabel: m.noLabel,
+          line: m.line,
+          status: m.status,
+          event: {
+            id: m.event.id,
+            sportId: m.event.sportId,
+            homeTeam: m.event.homeTeam,
+            awayTeam: m.event.awayTeam,
+            startsAt: m.event.startsAt.toISOString(),
+            status: m.event.status,
+          },
+          topOfBook: topOfBook(snap),
+          depth: depthAt(snap),
+          lastTradePrice: lastTrades.get(m.id) ?? null,
+          volume24h: volumes24h.get(m.id) ?? 0,
+          traders: traderCounts.get(m.id) ?? 0,
+        };
+      });
     });
 
     fastify.get<{ Params: { id: string }; Querystring: { bucket?: string; hours?: string } }>(
@@ -123,11 +199,14 @@ export default function marketsRoutes(engineCtx: EngineContext) {
       });
       if (!m) throw new HttpError(404, 'NOT_FOUND', 'Market not found');
 
-      const lastTrade = await prisma.trade.findFirst({
-        where: { marketId: m.id },
-        orderBy: { createdAt: 'desc' },
-        select: { price: true, createdAt: true },
-      });
+      const [lastTrade, snap] = await Promise.all([
+        prisma.trade.findFirst({
+          where: { marketId: m.id },
+          orderBy: { createdAt: 'desc' },
+          select: { price: true, createdAt: true },
+        }),
+        readSnapshot(redis, m.id),
+      ]);
 
       return {
         id: m.id,
@@ -148,7 +227,7 @@ export default function marketsRoutes(engineCtx: EngineContext) {
           startsAt: m.event.startsAt.toISOString(),
           status: m.event.status,
         },
-        topOfBook: topOfBook(engineCtx, m.id),
+        topOfBook: topOfBook(snap),
         lastTrade: lastTrade
           ? { price: lastTrade.price, at: lastTrade.createdAt.toISOString() }
           : null,
@@ -162,7 +241,7 @@ export default function marketsRoutes(engineCtx: EngineContext) {
       });
       if (!exists) throw new HttpError(404, 'NOT_FOUND', 'Market not found');
 
-      const snapshot = bookSnapshot(engineCtx, req.params.id);
+      const snapshot = await readSnapshot(redis, req.params.id);
       return truncateLevels(snapshot, TOP_OF_BOOK_LEVELS);
     });
 
@@ -195,36 +274,6 @@ export default function marketsRoutes(engineCtx: EngineContext) {
         offset,
       };
     });
-  };
-}
-
-function bookSnapshot(ctx: EngineContext, marketId: string): OrderBookSnapshot {
-  const book = ctx.books.get(marketId);
-  if (book) return book.snapshot();
-  // Empty snapshot for a market with no resting orders yet (or one that
-  // hasn't been touched since boot).
-  return new OrderBook(marketId).snapshot();
-}
-
-function topOfBook(ctx: EngineContext, marketId: string) {
-  const snap = bookSnapshot(ctx, marketId);
-  return {
-    yesBid: snap.yesBids[0]?.price ?? null,
-    yesAsk: snap.yesAsks[0]?.price ?? null,
-    noBid: snap.noBids[0]?.price ?? null,
-    noAsk: snap.noAsks[0]?.price ?? null,
-  };
-}
-
-function truncateLevels(snap: OrderBookSnapshot, limit: number): OrderBookSnapshot {
-  return {
-    marketId: snap.marketId,
-    yesBids: snap.yesBids.slice(0, limit),
-    yesAsks: snap.yesAsks.slice(0, limit),
-    noBids: snap.noBids.slice(0, limit),
-    noAsks: snap.noAsks.slice(0, limit),
-    lastTradePrice: snap.lastTradePrice,
-    lastTradeAt: snap.lastTradeAt,
   };
 }
 
@@ -277,17 +326,6 @@ async function traderCountPerMarket(marketIds: string[]): Promise<Map<string, nu
   const out = new Map<string, number>();
   for (const [k, v] of sets) out.set(k, v.size);
   return out;
-}
-
-/** Best-bid quantity at top-of-book for each side; used as depth hint for the list view. */
-function depthAt(ctx: EngineContext, marketId: string) {
-  const snap = bookSnapshot(ctx, marketId);
-  return {
-    yesBidQty: snap.yesBids[0]?.quantity ?? 0,
-    yesAskQty: snap.yesAsks[0]?.quantity ?? 0,
-    noBidQty: snap.noBids[0]?.quantity ?? 0,
-    noAskQty: snap.noAsks[0]?.quantity ?? 0,
-  };
 }
 
 interface Candle {

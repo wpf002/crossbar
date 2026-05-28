@@ -1,7 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
-import { OrderBook, type EngineContext } from '@crossbar/engine';
+import Redis from 'ioredis';
 import authPlugin from './plugins/auth.js';
 import rateLimitPlugin from './plugins/rate-limit.js';
 import healthRoutes from './routes/health.js';
@@ -15,17 +15,21 @@ import leaderboardRoutes from './routes/leaderboard.js';
 import botsRoutes from './routes/bots.js';
 import sseRoutes from './routes/sse.js';
 import adminRoutes from './routes/admin.js';
-import { prisma } from './lib/prisma.js';
 import { mapError } from './lib/errors.js';
 import { loadEnv, type Env } from './env.js';
 import { createEventBus, nullEventBus, type EventBus } from './lib/events.js';
+import {
+  createMatcherClient,
+  nullMatcherClient,
+  type MatcherClient,
+} from './lib/matcher-client.js';
 
 export interface BuildAppOptions {
   env?: Env;
-  /** Override the engine context (useful in tests). */
-  engineCtx?: EngineContext;
   /** Override the event bus (useful in tests). */
   bus?: EventBus;
+  /** Override the matcher client (useful in tests). */
+  matcher?: MatcherClient;
 }
 
 export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -43,16 +47,24 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
           },
   });
 
-  const engineCtx: EngineContext = opts.engineCtx ?? {
-    prisma,
-    books: new Map(),
-  };
+  // Post-cutover the API holds no in-memory books. It talks to the matcher over
+  // a Redis stream and reads book snapshots from Redis keys the matcher writes.
+  const redis = env.REDIS_URL ? new Redis(env.REDIS_URL, { maxRetriesPerRequest: 1 }) : null;
+  redis?.on('error', (err) => {
+    // eslint-disable-next-line no-console
+    console.warn('[redis] error:', err.message);
+  });
 
   const bus: EventBus =
     opts.bus ?? (env.REDIS_URL ? createEventBus(env.REDIS_URL) : nullEventBus());
 
+  const matcher: MatcherClient =
+    opts.matcher ?? (env.REDIS_URL ? createMatcherClient(env.REDIS_URL) : nullMatcherClient());
+
   app.addHook('onClose', async () => {
     await bus.close();
+    await matcher.close();
+    if (redis) redis.disconnect();
   });
 
   app.setErrorHandler((err, _req, reply) => {
@@ -70,50 +82,13 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(sportsRoutes);
   await app.register(authRoutes, { prefix: '/auth' });
   await app.register(meRoutes, { prefix: '/me' });
-  await app.register(marketsRoutes(engineCtx), { prefix: '/markets' });
-  await app.register(ordersRoutes(engineCtx, bus), { prefix: '/orders' });
+  await app.register(marketsRoutes(redis), { prefix: '/markets' });
+  await app.register(ordersRoutes(matcher), { prefix: '/orders' });
   await app.register(commentsRoutes);
   await app.register(leaderboardRoutes);
   await app.register(botsRoutes);
-  await app.register(sseRoutes({ engineCtx, bus }));
-  await app.register(adminRoutes({ engineCtx, bus }), { prefix: '/admin' });
+  await app.register(sseRoutes({ redis, bus }));
+  await app.register(adminRoutes({ matcher, bus }), { prefix: '/admin' });
 
   return app;
-}
-
-/** Build books from currently-OPEN orders in Postgres. */
-export async function hydrateBooksFromDb(): Promise<Map<string, OrderBook>> {
-  const openMarkets = await prisma.market.findMany({
-    where: { status: 'OPEN' },
-    select: { id: true },
-  });
-
-  const books = new Map<string, OrderBook>();
-  for (const { id } of openMarkets) {
-    const book = new OrderBook(id);
-    books.set(id, book);
-    const orders = await prisma.order.findMany({
-      where: {
-        marketId: id,
-        status: { in: ['OPEN', 'PARTIAL'] },
-        outcome: { in: ['YES', 'NO'] },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    for (const o of orders) {
-      if (o.outcome === 'INVALID') continue;
-      const remaining = o.quantity - o.filled;
-      if (remaining <= 0) continue;
-      book.addOrder({
-        id: o.id,
-        userId: o.userId,
-        side: o.side,
-        outcome: o.outcome,
-        price: o.price,
-        remaining,
-        ts: o.createdAt.getTime(),
-      });
-    }
-  }
-  return books;
 }
