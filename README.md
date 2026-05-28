@@ -127,31 +127,10 @@ crossbar/
 
 ## Roadmap
 
-**Phase 1 — Core engine** *(in progress)*
-- [x] Monorepo scaffold
-- [x] Prisma schema (users, wallets, markets, orders, trades, positions)
-- [ ] Matching engine (in-memory order book, Redis persistence)
-- [ ] HTTP API (auth, place/cancel orders, market list, positions)
-- [ ] Resolver (ESPN polling, auto-resolution)
-- [ ] Minimal web UI (market list, order entry, portfolio)
-
-**Phase 2 — Real users**
-- [ ] Email/password auth
-- [ ] Live order book updates (SSE)
-- [ ] Trade history, P&L charts
-- [ ] Admin dashboard (manual market creation, dispute resolution)
-
-**Phase 3 — Scale**
-- [ ] Move matching engine to Rust or in-memory Node service with WAL
-- [ ] Player props markets
-- [ ] In-game live markets
-- [ ] Calibration dashboard (Brier scores vs Pinnacle close)
-
-**Phase 4 — Real money** *(only if warranted)*
-- [ ] USDC integration via Privy
-- [ ] KYC via Persona/Stripe
-- [ ] Geo-blocking
-- [ ] Smart contract layer for settlement
+Phases 1–2.5 are shipped and Phase 3 is partially shipped (matcher cutover +
+platform calibration). See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full
+plan: remaining Phase 3 work, operational hardening, polish, growth, the
+real-money fork, and scale.
 
 ---
 
