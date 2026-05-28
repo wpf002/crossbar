@@ -208,3 +208,33 @@ export interface BotsStatsResponse {
   bots: BotStat[];
   backtest: { events: number; generatedAt: string };
 }
+
+export interface CalibrationBucket {
+  bin: string;
+  midpoint: number;
+  sampleSize: number;
+  expectedYesProb: number;
+  actualYesProb: number;
+  brierContrib: number;
+}
+
+export interface CalibrationResponse {
+  windowDays: number;
+  totalMarkets: number;
+  brierScore: number | null;
+  calibrationError: number | null;
+  buckets: CalibrationBucket[];
+}
+
+export interface DailyAccuracyRow {
+  date: string;
+  platformAccuracy: number | null;
+  platformResolved: number;
+  bots: Record<string, { accuracy: number | null; resolved: number }>;
+}
+
+export interface DailyAccuracyResponse {
+  windowDays: number;
+  bots: string[];
+  days: DailyAccuracyRow[];
+}

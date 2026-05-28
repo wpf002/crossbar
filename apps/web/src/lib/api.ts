@@ -1,8 +1,10 @@
 import Cookies from 'js-cookie';
 import type {
   BotsStatsResponse,
+  CalibrationResponse,
   CandleSeries,
   Comment,
+  DailyAccuracyResponse,
   LeaderboardResponse,
   MarketDetail,
   MarketListItem,
@@ -179,6 +181,9 @@ export const api = {
   // ─── Bot stats ──────────────────────────────────────────────────────────
   botStats: () => request<BotsStatsResponse>('/bots/stats'),
 
+  botDailyAccuracy: (days = 30) =>
+    request<DailyAccuracyResponse>(`/bots/daily-accuracy?days=${days}`),
+
   // ─── Orders ─────────────────────────────────────────────────────────────
   placeOrder: (body: PlaceOrderRequest) =>
     request<PlaceOrderResponse>('/orders', {
@@ -275,6 +280,9 @@ export const api = {
       `/admin/users/${id}/topup`,
       { method: 'POST', json: { amount }, auth: true },
     ),
+
+  adminCalibration: (days: number) =>
+    request<CalibrationResponse>(`/admin/calibration?days=${days}`, { auth: true }),
 };
 
 export interface AdminMarketBrief {

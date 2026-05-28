@@ -15,7 +15,7 @@ export default function AdminHome(): JSX.Element {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Admin</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Front Office</h1>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
@@ -55,6 +55,11 @@ export default function AdminHome(): JSX.Element {
           href="/admin/users"
           title="Users"
           subtitle="Wallet topups, audit account state."
+        />
+        <NavCard
+          href="/admin/calibration"
+          title="Calibration"
+          subtitle="Closing prices vs outcomes, Brier scores."
         />
       </div>
     </div>
