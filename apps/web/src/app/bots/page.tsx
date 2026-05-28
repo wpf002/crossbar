@@ -1,9 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   CartesianGrid,
+  Legend,
   Line,
+  LineChart,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -12,12 +15,24 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Bot as BotIcon, Target } from 'lucide-react';
+import { Bot as BotIcon, LineChart as LineChartIcon, Target } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Card, CardSubtitle, CardTitle } from '@/components/ui/card';
 import { formatDollars } from '@/lib/format';
 import { cn } from '@/lib/cn';
-import type { BotCalibrationBin, BotSimulatedStat, BotStat } from '@/lib/types';
+import type { BotCalibrationBin, BotSimulatedStat, BotStat, DailyAccuracyRow } from '@/lib/types';
+
+const SERIES_COLORS: Record<string, string> = {
+  platform: '#e2e8f0',
+  bot_house: '#22d3ee',
+  bot_pinnacle: '#a78bfa',
+  bot_adaptive: '#34d399',
+  bot_contrarian: '#f472b6',
+  bot_momentum: '#fbbf24',
+  bot_random: '#94a3b8',
+};
+const seriesColor = (key: string): string => SERIES_COLORS[key] ?? '#64748b';
+const seriesLabel = (key: string): string => (key === 'platform' ? 'Platform' : `@${key}`);
 
 const BOT_BLURBS: Record<string, string> = {
   bot_house:
@@ -88,6 +103,9 @@ export default function BotsPage(): JSX.Element {
               </table>
             </div>
           </Card>
+
+          {/* Daily accuracy — platform vs each bot over time */}
+          <DailyAccuracySection />
 
           {/* Simulated backtest summary */}
           {q.data.backtest && (
@@ -381,5 +399,170 @@ function CalibrationCard({
         </ResponsiveContainer>
       </div>
     </Card>
+  );
+}
+
+const RANGES: Array<{ label: string; days: number }> = [
+  { label: '7d', days: 7 },
+  { label: '30d', days: 30 },
+  { label: '90d', days: 90 },
+];
+
+function DailyAccuracySection(): JSX.Element {
+  const [days, setDays] = useState(30);
+  const q = useQuery({
+    queryKey: ['bots-daily-accuracy', days],
+    queryFn: () => api.botDailyAccuracy(days),
+    refetchInterval: 5 * 60_000,
+  });
+
+  const series = ['platform', ...(q.data?.bots ?? [])];
+  // recharts wants oldest→newest left to right; the API returns newest-first.
+  const chartData = [...(q.data?.days ?? [])].reverse().map((d) => {
+    const row: Record<string, number | string | null> = { date: d.date.slice(5) };
+    row.platform = d.platformAccuracy != null ? Math.round(d.platformAccuracy * 100) : null;
+    for (const [name, cell] of Object.entries(d.bots)) {
+      row[name] = cell.accuracy != null ? Math.round(cell.accuracy * 100) : null;
+    }
+    return row;
+  });
+
+  return (
+    <Card className="p-0">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <LineChartIcon className="h-4 w-4 text-brand" />
+          <div>
+            <CardTitle className="text-sm">Daily Accuracy</CardTitle>
+            <CardSubtitle className="mt-1">
+              Share of that day's resolved markets each bot called correctly (entry price &gt; 50¢ ⇒
+              YES), vs. the platform's closing-price call.
+            </CardSubtitle>
+          </div>
+        </div>
+        <div className="flex rounded-md border border-slate-800 p-0.5">
+          {RANGES.map((r) => (
+            <button
+              key={r.label}
+              type="button"
+              onClick={() => setDays(r.days)}
+              className={cn(
+                'rounded px-3 py-1 text-xs font-semibold transition-colors',
+                days === r.days ? 'bg-slate-700 text-slate-50' : 'text-slate-400 hover:text-slate-200',
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {q.isLoading && <div className="m-4 h-64 animate-pulse rounded-lg bg-slate-900/40" />}
+      {q.data && chartData.length === 0 && (
+        <div className="px-4 py-8 text-center text-sm text-slate-500">
+          No markets have resolved in this window yet.
+        </div>
+      )}
+
+      {q.data && chartData.length > 0 && (
+        <>
+          <div className="h-72 px-2 pt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
+                <CartesianGrid stroke="#1e293b" strokeDasharray="2 4" />
+                <XAxis dataKey="date" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis
+                  domain={[0, 100]}
+                  ticks={[0, 25, 50, 75, 100]}
+                  tickFormatter={(v) => `${v}%`}
+                  stroke="#475569"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={36}
+                />
+                <ReferenceLine y={50} stroke="#334155" strokeDasharray="3 3" />
+                <Tooltip
+                  contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, fontSize: 12 }}
+                  formatter={(value: number, name: string) => [`${value}%`, seriesLabel(name)]}
+                />
+                <Legend formatter={(value: string) => seriesLabel(value)} wrapperStyle={{ fontSize: 11 }} />
+                {series.map((key) => (
+                  <Line
+                    key={key}
+                    type="monotone"
+                    dataKey={key}
+                    stroke={seriesColor(key)}
+                    strokeWidth={key === 'platform' ? 2.5 : 1.5}
+                    dot={false}
+                    connectNulls
+                    strokeDasharray={key === 'platform' ? undefined : undefined}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="overflow-x-auto border-t border-slate-800">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                  <th className="px-4 py-2 text-left">Date</th>
+                  <th className="px-4 py-2 text-right">Platform</th>
+                  {(q.data.bots ?? []).map((b) => (
+                    <th key={b} className="px-4 py-2 text-right">
+                      {b.replace('bot_', '')}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-900">
+                {q.data.days.map((d) => (
+                  <DailyRow key={d.date} row={d} bots={q.data!.bots} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function AccuracyCell({
+  accuracy,
+  resolved,
+}: {
+  accuracy: number | null;
+  resolved: number;
+}): JSX.Element {
+  if (accuracy == null) return <span className="text-slate-600">—</span>;
+  return (
+    <span
+      className={cn(
+        'tabular font-semibold',
+        accuracy >= 0.55 ? 'text-yes' : accuracy <= 0.45 ? 'text-no' : 'text-slate-200',
+      )}
+      title={`${resolved} resolved`}
+    >
+      {(accuracy * 100).toFixed(0)}%
+    </span>
+  );
+}
+
+function DailyRow({ row, bots }: { row: DailyAccuracyRow; bots: string[] }): JSX.Element {
+  return (
+    <tr className="hover:bg-slate-900/50">
+      <td className="px-4 py-2.5 font-medium text-slate-200">{row.date}</td>
+      <td className="px-4 py-2.5 text-right">
+        <AccuracyCell accuracy={row.platformAccuracy} resolved={row.platformResolved} />
+        <span className="ml-1 text-[10px] text-slate-600">({row.platformResolved})</span>
+      </td>
+      {bots.map((b) => (
+        <td key={b} className="px-4 py-2.5 text-right">
+          <AccuracyCell accuracy={row.bots[b]?.accuracy ?? null} resolved={row.bots[b]?.resolved ?? 0} />
+        </td>
+      ))}
+    </tr>
   );
 }

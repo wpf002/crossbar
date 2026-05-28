@@ -61,6 +61,11 @@ export default async function botsRoutes(fastify: FastifyInstance): Promise<void
     return getLearnerSnapshot();
   });
 
+  fastify.get<{ Querystring: { days?: string } }>('/bots/daily-accuracy', async (req) => {
+    const days = Math.min(365, Math.max(1, Number(req.query.days ?? 30)));
+    return getDailyAccuracy(days);
+  });
+
   fastify.get('/bots/stats', async () => {
     const bots = await prisma.user.findMany({
       where: { username: { in: BOT_USERNAMES } },
@@ -170,6 +175,140 @@ function toSimPayload(r: BacktestResult) {
     pnlCents: r.pnlCents,
     calibration: r.calibration,
   };
+}
+
+// ─── Daily accuracy (platform + per-bot) ──────────────────────────────────
+
+interface DayCell {
+  resolved: number;
+  correct: number;
+}
+interface DailyRow {
+  date: string;
+  platformAccuracy: number | null;
+  platformResolved: number;
+  bots: Record<string, { accuracy: number | null; resolved: number }>;
+}
+interface DailyAccuracyResult {
+  windowDays: number;
+  bots: string[];
+  days: DailyRow[];
+}
+
+const DAILY_TTL_MS = 5 * 60_000;
+const dailyCache = new Map<number, { at: number; value: DailyAccuracyResult }>();
+
+async function getDailyAccuracy(days: number): Promise<DailyAccuracyResult> {
+  const cached = dailyCache.get(days);
+  if (cached && Date.now() - cached.at < DAILY_TTL_MS) return cached.value;
+  const value = await computeDailyAccuracy(days);
+  dailyCache.set(days, { at: Date.now(), value });
+  return value;
+}
+
+const dayKey = (d: Date): string => d.toISOString().slice(0, 10);
+
+async function computeDailyAccuracy(days: number): Promise<DailyAccuracyResult> {
+  const since = new Date(Date.now() - days * 24 * 3600_000);
+
+  const [markets, bots] = await Promise.all([
+    prisma.market.findMany({
+      where: { status: 'RESOLVED', outcome: { in: ['YES', 'NO'] }, resolvedAt: { gte: since } },
+      select: { id: true, outcome: true, closedAt: true, resolvedAt: true },
+    }),
+    prisma.user.findMany({
+      where: { username: { in: BOT_USERNAMES } },
+      select: { id: true, username: true },
+    }),
+  ]);
+
+  const botName = new Map(bots.map((b) => [b.id, b.username]));
+  const presentBots = bots.map((b) => b.username).sort();
+
+  // Per-bot positions on the resolved markets in scope.
+  const positions = markets.length
+    ? await prisma.position.findMany({
+        where: { userId: { in: bots.map((b) => b.id) }, marketId: { in: markets.map((m) => m.id) } },
+        select: {
+          userId: true,
+          marketId: true,
+          avgYesCost: true,
+          avgNoCost: true,
+          yesShares: true,
+          noShares: true,
+        },
+      })
+    : [];
+  const posByMarket = new Map<string, typeof positions>();
+  for (const p of positions) {
+    const arr = posByMarket.get(p.marketId) ?? [];
+    arr.push(p);
+    posByMarket.set(p.marketId, arr);
+  }
+
+  // date → platform cell + per-bot cells
+  const platform = new Map<string, DayCell>();
+  const perBot = new Map<string, Map<string, DayCell>>(); // date → username → cell
+
+  const bump = (m: Map<string, DayCell>, key: string, correct: boolean): void => {
+    const cell = m.get(key) ?? { resolved: 0, correct: 0 };
+    cell.resolved += 1;
+    if (correct) cell.correct += 1;
+    m.set(key, cell);
+  };
+
+  for (const market of markets) {
+    if (!market.resolvedAt) continue;
+    const date = dayKey(market.resolvedAt);
+    const wasYes = market.outcome === 'YES';
+
+    // Platform "prediction" = closing YES price (last trade before close).
+    const lastTrade = await prisma.trade.findFirst({
+      where: { marketId: market.id, ...(market.closedAt ? { createdAt: { lte: market.closedAt } } : {}) },
+      orderBy: { createdAt: 'desc' },
+      select: { price: true, outcome: true },
+    });
+    if (lastTrade) {
+      const yesClose = lastTrade.outcome === 'YES' ? lastTrade.price : 100 - lastTrade.price;
+      bump(platform, date, yesClose > 50 === wasYes);
+    }
+
+    // Each bot that held a position with a derivable directional view.
+    for (const p of posByMarket.get(market.id) ?? []) {
+      const pred = predictionCents(p);
+      if (pred == null || pred === 50) continue;
+      const name = botName.get(p.userId);
+      if (!name) continue;
+      const m = perBot.get(date) ?? new Map<string, DayCell>();
+      bump(m, name, pred > 50 === wasYes);
+      perBot.set(date, m);
+    }
+  }
+
+  // Assemble rows newest-first across the union of dates seen.
+  const dates = new Set<string>([...platform.keys(), ...perBot.keys()]);
+  const rows: DailyRow[] = [...dates]
+    .sort((a, b) => (a < b ? 1 : -1))
+    .map((date) => {
+      const pf = platform.get(date);
+      const botCells = perBot.get(date) ?? new Map<string, DayCell>();
+      const botsOut: DailyRow['bots'] = {};
+      for (const name of presentBots) {
+        const c = botCells.get(name);
+        botsOut[name] = {
+          resolved: c?.resolved ?? 0,
+          accuracy: c && c.resolved > 0 ? c.correct / c.resolved : null,
+        };
+      }
+      return {
+        date,
+        platformResolved: pf?.resolved ?? 0,
+        platformAccuracy: pf && pf.resolved > 0 ? pf.correct / pf.resolved : null,
+        bots: botsOut,
+      };
+    });
+
+  return { windowDays: days, bots: presentBots, days: rows };
 }
 
 function predictionCents(p: {

@@ -18,7 +18,7 @@ export function TopNav(): JSX.Element {
     { href: '/leaderboard', label: 'Leaderboard', match: (p: string) => p.startsWith('/leaderboard') },
     { href: '/bots', label: 'Bots', match: (p: string) => p.startsWith('/bots') },
     ...(user?.isAdmin
-      ? [{ href: '/admin', label: 'Admin', match: (p: string) => p.startsWith('/admin') }]
+      ? [{ href: '/admin', label: 'Front Office', match: (p: string) => p.startsWith('/admin') }]
       : []),
   ];
 
