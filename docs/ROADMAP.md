@@ -42,12 +42,18 @@
 - ✓ Auto-generation from live box scores (opt-in `PLAYER_PROPS_AUTOGEN`) +
   admin manual creation; web admin form + sibling-market browsing
 
-### Live in-game markets
-- Resolver polls every 5–10s during LIVE games (vs 60s scheduled)
-- Game-state tracker: period/clock/score captured each poll
-- Markets that open mid-game (live moneyline updated for current score)
-- Per-quarter / per-inning resolution windows
-- The architecture handles this; the data pipeline is the work
+### Live in-game markets (core shipped)
+- ✓ Resolver polls in-progress games every `LIVE_POLL_SECONDS` (default 10s,
+  clamped 5–60) — a fast loop scoped to sports with a LIVE event, separate from
+  the 60s full poll; player props also refresh on this cadence
+- ✓ Game-state tracker: `Event.period` + `displayClock` captured each poll and
+  surfaced (live score/clock on game rows + market detail)
+- ⏳ Markets that open mid-game (live moneyline re-opened on current score) —
+  **product decision**: today game lines close at LIVE by design; re-opening
+  them reverses that. Needs a call before building.
+- ⏳ Per-quarter / per-inning resolution windows — **product + data decision**:
+  define the markets ("winner of Q2", "runs in inning 7") and source per-period
+  scoring from ESPN before building resolution.
 
 ---
 
