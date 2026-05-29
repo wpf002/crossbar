@@ -36,14 +36,14 @@ async function seedSingleMarketEvent(opts: {
 }
 
 describe('applyEventTransitions', () => {
-  it('closes markets when event goes LIVE', async () => {
+  it('keeps markets OPEN and tradeable when event goes LIVE', async () => {
     const event = await seedSingleMarketEvent({ status: 'LIVE' });
 
     await applyEventTransitions(event, { prisma, log });
 
     const market = await prisma.market.findFirstOrThrow();
-    expect(market.status).toBe('CLOSED');
-    expect(market.closedAt).not.toBeNull();
+    expect(market.status).toBe('OPEN');
+    expect(market.closedAt).toBeNull();
   });
 
   it('resolves MONEYLINE markets correctly when event is FINAL', async () => {
@@ -111,12 +111,12 @@ describe('applyEventTransitions', () => {
     expect(second.resolvedAt?.getTime()).toBe(first.resolvedAt?.getTime());
   });
 
-  it('LIVE then FINAL — closes then resolves', async () => {
+  it('LIVE stays open, then resolves at FINAL', async () => {
     let event = await seedSingleMarketEvent({ status: 'LIVE' });
     await applyEventTransitions(event, { prisma, log });
 
     let market = await prisma.market.findFirstOrThrow();
-    expect(market.status).toBe('CLOSED');
+    expect(market.status).toBe('OPEN');
 
     // Re-ingest with FINAL status.
     const result = await ingestSport('mlb', {

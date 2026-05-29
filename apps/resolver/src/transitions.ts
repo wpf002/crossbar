@@ -1,6 +1,6 @@
 import type { Event, PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
-import { closeMarket, voidMarket } from '@crossbar/engine';
+import { voidMarket } from '@crossbar/engine';
 import { resolveMarketFromEvent } from './settle.js';
 
 export interface TransitionsDeps {
@@ -22,12 +22,9 @@ export async function applyEventTransitions(
   for (const market of markets) {
     try {
       if (event.status === 'LIVE') {
-        // Game-line markets close once the game starts (no live betting on
-        // them). Player props stay open and trade live until the game ends.
-        if (market.status === 'OPEN' && market.type !== 'PLAYER_TOTAL') {
-          await closeMarket(prisma, market.id);
-          log.info({ marketId: market.id, eventId: event.id }, 'closed market (event LIVE)');
-        }
+        // Live in-game markets: game lines and player props both stay OPEN and
+        // trade through the game. The order book reprices off the live score;
+        // everything settles at FINAL. (Nothing to do on the LIVE transition.)
       } else if (event.status === 'FINAL') {
         if (market.status === 'RESOLVED' || market.status === 'VOIDED') continue;
         await resolveMarketFromEvent(market, event, deps);

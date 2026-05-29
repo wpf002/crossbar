@@ -132,7 +132,7 @@ describe('player-prop market resolution', () => {
     expect(m.outcome).toBe('NO');
   });
 
-  it('keeps player props OPEN when the game goes LIVE (but closes game lines)', async () => {
+  it('keeps both player props and game lines OPEN when the game goes LIVE', async () => {
     const event = await seedEvent({ status: 'LIVE', homeScore: 0, awayScore: 0 });
     const { players } = await ingestPlayerStats(event, {
       prisma,
@@ -157,6 +157,6 @@ describe('player-prop market resolution', () => {
     const prop = await prisma.market.findFirstOrThrow({ where: { type: 'PLAYER_TOTAL' } });
     expect(prop.status).toBe('OPEN');
     const gameLine = await prisma.market.findFirstOrThrow({ where: { type: 'MONEYLINE' } });
-    expect(gameLine.status).toBe('CLOSED');
+    expect(gameLine.status).toBe('OPEN');
   });
 });
