@@ -1,4 +1,4 @@
-import type { PlayerStatLine, SportEvent, SportId } from '@crossbar/shared';
+import type { EventSummary, GameState, PlayerStatLine, SportEvent, SportId } from '@crossbar/shared';
 
 const PATHS: Record<SportId, string> = {
   mlb: 'baseball/mlb',
@@ -83,23 +83,65 @@ export function parseLinescores(raw: unknown): number[] | undefined {
 }
 
 /**
- * Fetch per-player box-score stats for a single event from ESPN's summary
- * endpoint. Returns one normalized stat line per player (merged across all
- * stat categories — a player who appears in both "rushing" and "receiving"
- * gets one line with both). Empty array if the box score isn't published yet.
+ * Fetch a single event's full summary — authoritative game state (score,
+ * period, clock, and per-period linescores, which the scoreboard often omits
+ * for MLB) plus the player box score. Use this for live games and to finalize
+ * games that have dropped off the scoreboard.
  */
-export async function fetchEventPlayerStats(
+export async function fetchEventSummary(
   sport: SportId,
   eventExternalId: string,
-): Promise<PlayerStatLine[]> {
+): Promise<EventSummary> {
   const base = process.env.ESPN_API_BASE ?? 'https://site.api.espn.com/apis/site/v2/sports';
   const url = `${base}/${PATHS[sport]}/summary?event=${encodeURIComponent(eventExternalId)}`;
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`ESPN ${sport} summary fetch failed: ${res.status}`);
-  const data = (await res.json()) as any;
+  return parseSummary((await res.json()) as any);
+}
 
-  return parseBoxscorePlayers(data?.boxscore?.players ?? []);
+/**
+ * Backwards-compatible helper: just the player stat lines from a summary.
+ */
+export async function fetchEventPlayerStats(
+  sport: SportId,
+  eventExternalId: string,
+): Promise<PlayerStatLine[]> {
+  return (await fetchEventSummary(sport, eventExternalId)).players;
+}
+
+/**
+ * Parse an ESPN event summary into normalized game state + player lines.
+ * Exported for testing — pure, no I/O.
+ */
+export function parseSummary(data: any): EventSummary {
+  const comp = data?.header?.competitions?.[0];
+  const home = comp?.competitors?.find((c: any) => c.homeAway === 'home');
+  const away = comp?.competitors?.find((c: any) => c.homeAway === 'away');
+  const statusName: string | undefined = comp?.status?.type?.name;
+
+  const game: GameState = {
+    status: statusName ? STATUS_MAP[statusName] : undefined,
+    homeScore: numOrUndef(home?.score),
+    awayScore: numOrUndef(away?.score),
+    period: typeof comp?.status?.period === 'number' ? comp.status.period : undefined,
+    displayClock:
+      typeof comp?.status?.type?.shortDetail === 'string'
+        ? comp.status.type.shortDetail
+        : typeof comp?.status?.displayClock === 'string'
+          ? comp.status.displayClock
+          : undefined,
+    homeLinescores: parseLinescores(home?.linescores),
+    awayLinescores: parseLinescores(away?.linescores),
+  };
+
+  return { game, players: parseBoxscorePlayers(data?.boxscore?.players ?? []) };
+}
+
+function numOrUndef(v: unknown): number | undefined {
+  if (v == null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /**

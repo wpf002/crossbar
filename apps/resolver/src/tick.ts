@@ -5,6 +5,7 @@ import { ingestSport } from './ingest.js';
 import { ingestPlayerStats } from './players.js';
 import { ensurePlayerPropMarkets } from './prop-markets.js';
 import { ensurePeriodMarkets } from './period-markets.js';
+import { reconcileMissingLive } from './reconcile.js';
 import { applyEventTransitions } from './transitions.js';
 
 export interface TickDeps {
@@ -26,18 +27,29 @@ export async function runTick(sports: readonly SportId[], deps: TickDeps): Promi
   for (const sport of sports) {
     const result = await ingestSport(sport, { prisma, log });
     for (const event of result.updatedEvents) {
-      // Pull box-score stats for in-progress/finished games before running
-      // transitions, so FINAL player-prop resolution reads the final line.
-      if (event.status === 'LIVE' || event.status === 'FINAL') {
-        const { players } = await ingestPlayerStats(event, { prisma, log });
-        if (deps.autogenProps && event.status === 'LIVE') {
-          await ensurePlayerPropMarkets(event, players, { prisma, log });
+      let current = event;
+      // Pull the summary for in-progress/finished games before running
+      // transitions: it refreshes live state (incl. linescores) and player
+      // stats, so period and player-prop markets resolve against current data.
+      if (current.status === 'LIVE' || current.status === 'FINAL') {
+        const r = await ingestPlayerStats(current, { prisma, log });
+        current = r.event;
+        if (deps.autogenProps && current.status === 'LIVE') {
+          await ensurePlayerPropMarkets(current, r.players, { prisma, log });
         }
       }
-      if (deps.periodMarkets && event.status === 'LIVE') {
-        await ensurePeriodMarkets(event, { prisma, log });
+      if (deps.periodMarkets && current.status === 'LIVE') {
+        await ensurePeriodMarkets(current, { prisma, log });
       }
-      await applyEventTransitions(event, { prisma, log });
+      await applyEventTransitions(current, { prisma, log });
+    }
+
+    // Finalize any LIVE events that fell off the scoreboard (ESPN drops
+    // finished games), so they don't hang open forever. Only when the fetch
+    // succeeded — an empty fetch must not orphan everything.
+    if (result.fetched > 0) {
+      const seen = new Set(result.updatedEvents.map((e) => e.externalId));
+      await reconcileMissingLive(sport, seen, { prisma, log });
     }
   }
 }

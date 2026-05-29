@@ -28,7 +28,11 @@ async function seedLiveEventWithPlayers(lines: PlayerStatLine[]): Promise<Event>
     fetchScoreboard: async () => [evt()],
   });
   const event = result.updatedEvents[0]!;
-  await ingestPlayerStats(event, { prisma, log, fetchEventPlayerStats: async () => lines });
+  await ingestPlayerStats(event, {
+    prisma,
+    log,
+    fetchEventSummary: async () => ({ game: {}, players: lines }),
+  });
   return event;
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBoxscorePlayers } from './espn.js';
+import { parseBoxscorePlayers, parseSummary } from './espn.js';
 
 describe('parseBoxscorePlayers', () => {
   it('merges a player across multiple stat categories', () => {
@@ -97,5 +97,58 @@ describe('parseBoxscorePlayers', () => {
       },
     ];
     expect(parseBoxscorePlayers(teams)).toEqual([]);
+  });
+});
+
+describe('parseSummary', () => {
+  const data = {
+    header: {
+      competitions: [
+        {
+          status: { period: 7, type: { name: 'STATUS_IN_PROGRESS', shortDetail: 'Top 7th' } },
+          competitors: [
+            { homeAway: 'home', score: '1', linescores: [{ value: 0 }, { value: 1 }, { value: 0 }] },
+            { homeAway: 'away', score: '7', linescores: [{ value: 3 }, { value: 0 }, { value: 4 }] },
+          ],
+        },
+      ],
+    },
+    boxscore: { players: [] },
+  };
+
+  it('extracts live game state incl. linescores and period', () => {
+    const { game } = parseSummary(data);
+    expect(game.status).toBe('LIVE');
+    expect(game.homeScore).toBe(1);
+    expect(game.awayScore).toBe(7);
+    expect(game.period).toBe(7);
+    expect(game.displayClock).toBe('Top 7th');
+    expect(game.homeLinescores).toEqual([0, 1, 0]);
+    expect(game.awayLinescores).toEqual([3, 0, 4]);
+  });
+
+  it('maps a final status and tolerates a missing box score', () => {
+    const final = {
+      header: {
+        competitions: [
+          {
+            status: { period: 9, type: { name: 'STATUS_FINAL' } },
+            competitors: [
+              { homeAway: 'home', score: '5' },
+              { homeAway: 'away', score: '2' },
+            ],
+          },
+        ],
+      },
+    };
+    const { game, players } = parseSummary(final);
+    expect(game.status).toBe('FINAL');
+    expect(game.homeScore).toBe(5);
+    expect(game.homeLinescores).toBeUndefined();
+    expect(players).toEqual([]);
+  });
+
+  it('returns undefined status for an unparseable payload', () => {
+    expect(parseSummary({}).game.status).toBeUndefined();
   });
 });

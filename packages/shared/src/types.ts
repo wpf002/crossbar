@@ -36,6 +36,23 @@ export interface PlayerStatLine {
   stats: Record<string, number>;
 }
 
+/** Live game state, sourced from ESPN's per-event summary endpoint. */
+export interface GameState {
+  status?: 'SCHEDULED' | 'LIVE' | 'FINAL' | 'POSTPONED' | 'CANCELED';
+  homeScore?: number;
+  awayScore?: number;
+  period?: number;
+  displayClock?: string;
+  homeLinescores?: number[];
+  awayLinescores?: number[];
+}
+
+/** Full per-event summary: authoritative game state + player box score. */
+export interface EventSummary {
+  game: GameState;
+  players: PlayerStatLine[];
+}
+
 export interface SportEvent {
   externalId: string;
   sportId: SportId;

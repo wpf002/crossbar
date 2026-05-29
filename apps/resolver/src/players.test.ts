@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import pino from 'pino';
 import type { Event } from '@prisma/client';
 import { prisma } from '@crossbar/db';
-import type { PlayerStatLine, SportEvent } from '@crossbar/shared';
+import type { EventSummary, PlayerStatLine, SportEvent } from '@crossbar/shared';
 import { ingestSport } from './ingest.js';
 import { ingestPlayerStats } from './players.js';
 import { applyEventTransitions } from './transitions.js';
@@ -35,6 +35,10 @@ const STAT_LINES: PlayerStatLine[] = [
   { externalId: 'a2', name: 'Gerrit Cole', team: 'Yankees', position: 'SP', stats: { strikeouts: 8 } },
 ];
 
+function summary(players: PlayerStatLine[], game: EventSummary['game'] = {}): EventSummary {
+  return { game, players };
+}
+
 describe('ingestPlayerStats', () => {
   it('upserts players and stat lines, idempotently', async () => {
     const event = await seedEvent({ status: 'LIVE', homeScore: 1, awayScore: 0 });
@@ -42,7 +46,7 @@ describe('ingestPlayerStats', () => {
     const r1 = await ingestPlayerStats(event, {
       prisma,
       log,
-      fetchEventPlayerStats: async () => STAT_LINES,
+      fetchEventSummary: async () => summary(STAT_LINES),
     });
     expect(r1.players).toHaveLength(2);
     expect(await prisma.player.count()).toBe(2);
@@ -52,7 +56,7 @@ describe('ingestPlayerStats', () => {
     await ingestPlayerStats(event, {
       prisma,
       log,
-      fetchEventPlayerStats: async () => STAT_LINES,
+      fetchEventSummary: async () => summary(STAT_LINES),
     });
     expect(await prisma.player.count()).toBe(2);
     expect(await prisma.playerStat.count()).toBe(2);
@@ -63,12 +67,33 @@ describe('ingestPlayerStats', () => {
     expect(stat.stats).toMatchObject({ hits: 2, RBIs: 3 });
   });
 
-  it('returns empty (no throw) when the box score fetch fails', async () => {
+  it('refreshes live game state (linescores/period) from the summary', async () => {
     const event = await seedEvent({ status: 'LIVE' });
     const r = await ingestPlayerStats(event, {
       prisma,
       log,
-      fetchEventPlayerStats: async () => {
+      fetchEventSummary: async () =>
+        summary(STAT_LINES, {
+          homeScore: 1,
+          awayScore: 7,
+          period: 7,
+          displayClock: 'Top 7th',
+          homeLinescores: [0, 1, 0],
+          awayLinescores: [3, 0, 4],
+        }),
+    });
+    expect(r.event.period).toBe(7);
+    expect(r.event.homeLinescores).toEqual([0, 1, 0]);
+    expect(r.event.awayScore).toBe(7);
+    expect(r.event.displayClock).toBe('Top 7th');
+  });
+
+  it('returns empty (no throw) when the summary fetch fails', async () => {
+    const event = await seedEvent({ status: 'LIVE' });
+    const r = await ingestPlayerStats(event, {
+      prisma,
+      log,
+      fetchEventSummary: async () => {
         throw new Error('boom');
       },
     });
@@ -83,7 +108,7 @@ describe('player-prop market resolution', () => {
     const { players } = await ingestPlayerStats(event, {
       prisma,
       log,
-      fetchEventPlayerStats: async () => STAT_LINES,
+      fetchEventSummary: async () => summary(STAT_LINES),
     });
     const judge = players.find((p) => p.line.externalId === 'a1')!;
 
@@ -110,10 +135,8 @@ describe('player-prop market resolution', () => {
     await ingestPlayerStats(fevent, {
       prisma,
       log,
-      fetchEventPlayerStats: async () => [
-        { ...STAT_LINES[0]!, stats: { hits: finalHits, RBIs: 3 } },
-        STAT_LINES[1]!,
-      ],
+      fetchEventSummary: async () =>
+        summary([{ ...STAT_LINES[0]!, stats: { hits: finalHits, RBIs: 3 } }, STAT_LINES[1]!]),
     });
     await applyEventTransitions(fevent, { prisma, log });
 
@@ -137,7 +160,7 @@ describe('player-prop market resolution', () => {
     const { players } = await ingestPlayerStats(event, {
       prisma,
       log,
-      fetchEventPlayerStats: async () => STAT_LINES,
+      fetchEventSummary: async () => summary(STAT_LINES),
     });
     await prisma.market.create({
       data: {
