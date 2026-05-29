@@ -33,18 +33,20 @@
 
 ## Phase 3 (remainder) — Finish what's scoped
 
-### Player props markets
-- New `Player` table; ESPN per-game player stats endpoint
-- Per-sport prop catalogs (rushing yds, pts, hits, goals, etc.)
-- Market types: `PLAYER_TOTAL`, `PLAYER_OVER_UNDER`
-- Resolution from per-player stat lines, not game outcomes
-- Notable: prop volume tends to dwarf game-line volume
+### Player props markets ✓
+- ✓ `Player` + `PlayerStat` models; ESPN summary (box-score) endpoint
+- ✓ Per-sport prop catalogs (rushing yds, pts, hits, goals, etc.)
+- ✓ Market type `PLAYER_TOTAL` (over/under on a player stat — consolidated the
+  two roadmap names since they resolve identically)
+- ✓ Resolution from per-player stat lines, not game outcomes
+- ✓ Auto-generation from live box scores (opt-in `PLAYER_PROPS_AUTOGEN`) +
+  admin manual creation; web admin form + sibling-market browsing
 
 ### Live in-game markets
 - Resolver polls every 5–10s during LIVE games (vs 60s scheduled)
+- Game-state tracker: period/clock/score captured each poll
 - Markets that open mid-game (live moneyline updated for current score)
 - Per-quarter / per-inning resolution windows
-- Game-state tracker: at-bat, possession, time remaining
 - The architecture handles this; the data pipeline is the work
 
 ---

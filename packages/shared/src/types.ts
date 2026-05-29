@@ -45,6 +45,10 @@ export interface SportEvent {
   status: 'SCHEDULED' | 'LIVE' | 'FINAL' | 'POSTPONED' | 'CANCELED';
   homeScore?: number;
   awayScore?: number;
+  /** Current quarter / inning / period number (live games). */
+  period?: number;
+  /** Human-readable game clock, e.g. "5:23" or "Top 7th" (live games). */
+  displayClock?: string;
   /** Spread: negative = home favored (e.g. home -3.5 means -3.5). */
   spread?: number;
   /** Combined points/runs/goals line for OVER/UNDER. */

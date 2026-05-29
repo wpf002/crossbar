@@ -2,14 +2,15 @@ import cron from 'node-cron';
 import pino from 'pino';
 import { prisma } from '@crossbar/db';
 import { SPORTS, type SportId } from '@crossbar/shared';
-import { ingestSport } from './ingest.js';
-import { ingestPlayerStats } from './players.js';
-import { ensurePlayerPropMarkets } from './prop-markets.js';
-import { applyEventTransitions } from './transitions.js';
+import { liveSports, runTick, type TickDeps } from './tick.js';
 
 // Auto-generate player-prop markets from live box scores. Off by default —
 // prop volume is large, so the operator opts in explicitly.
 const AUTOGEN_PROPS = process.env.PLAYER_PROPS_AUTOGEN === 'true';
+
+// How often to re-poll sports with a game in progress. ESPN scoreboards update
+// within a few seconds; 10s keeps live scores/props fresh without hammering.
+const LIVE_POLL_SECONDS = clampInt(process.env.LIVE_POLL_SECONDS, 10, 5, 60);
 
 const log = pino({
   transport:
@@ -18,55 +19,62 @@ const log = pino({
       : undefined,
 });
 
+const deps: TickDeps = { prisma, log, autogenProps: AUTOGEN_PROPS };
+
+// A single guard serializes the full and live ticks so they never overlap and
+// double-ingest the same event.
 let tickInFlight = false;
 
-async function tick(): Promise<void> {
+async function guarded(label: 'full' | 'live', fn: () => Promise<void>): Promise<void> {
   if (tickInFlight) {
-    log.warn('previous tick still running — skipping');
+    log.debug({ label }, 'tick busy — skipping');
     return;
   }
   tickInFlight = true;
   const started = Date.now();
   try {
-    for (const sport of SPORTS) {
-      const result = await ingestSport(sport as SportId, { prisma, log });
-      for (const event of result.updatedEvents) {
-        // Pull box-score stats for in-progress/finished games before running
-        // transitions, so FINAL player-prop resolution reads the final line.
-        if (event.status === 'LIVE' || event.status === 'FINAL') {
-          const { players } = await ingestPlayerStats(event, { prisma, log });
-          if (AUTOGEN_PROPS && event.status === 'LIVE') {
-            await ensurePlayerPropMarkets(event, players, { prisma, log });
-          }
-        }
-        await applyEventTransitions(event, { prisma, log });
-      }
-    }
-    log.info({ ms: Date.now() - started }, 'tick complete');
+    await fn();
+    log.info({ label, ms: Date.now() - started }, 'tick complete');
   } catch (err) {
-    log.error({ err }, 'tick failed');
+    log.error({ err, label }, 'tick failed');
   } finally {
     tickInFlight = false;
   }
 }
 
 async function main(): Promise<void> {
-  log.info('crossbar resolver starting');
+  log.info({ livePollSeconds: LIVE_POLL_SECONDS }, 'crossbar resolver starting');
 
-  // Run once on boot, then every minute.
-  void tick();
-  const task = cron.schedule('* * * * *', () => {
-    void tick();
+  // Full poll across all sports: once on boot, then every minute.
+  void guarded('full', () => runTick(SPORTS as readonly SportId[], deps));
+  const fullTask = cron.schedule('* * * * *', () => {
+    void guarded('full', () => runTick(SPORTS as readonly SportId[], deps));
   });
+
+  // Fast poll for in-progress games only.
+  const liveTimer = setInterval(() => {
+    void guarded('live', async () => {
+      const sports = await liveSports(prisma);
+      if (sports.length === 0) return;
+      await runTick(sports, deps);
+    });
+  }, LIVE_POLL_SECONDS * 1000);
 
   const shutdown = async (): Promise<void> => {
     log.info('shutting down');
-    task.stop();
+    fullTask.stop();
+    clearInterval(liveTimer);
     await prisma.$disconnect();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+}
+
+function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
 }
 
 main().catch((err: unknown) => {

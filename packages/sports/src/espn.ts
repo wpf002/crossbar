@@ -28,6 +28,13 @@ export async function fetchScoreboard(sport: SportId): Promise<SportEvent[]> {
     const home = comp?.competitors?.find((c: any) => c.homeAway === 'home');
     const away = comp?.competitors?.find((c: any) => c.homeAway === 'away');
     const statusName = e.status?.type?.name ?? 'STATUS_SCHEDULED';
+    const period = typeof e.status?.period === 'number' ? e.status.period : undefined;
+    const displayClock =
+      typeof e.status?.type?.shortDetail === 'string'
+        ? e.status.type.shortDetail
+        : typeof e.status?.displayClock === 'string'
+          ? e.status.displayClock
+          : undefined;
     const odds = comp?.odds?.[0];
     const spread = typeof odds?.spread === 'number' ? odds.spread : undefined;
     const overUnder = typeof odds?.overUnder === 'number' ? odds.overUnder : undefined;
@@ -49,6 +56,8 @@ export async function fetchScoreboard(sport: SportId): Promise<SportEvent[]> {
       status: STATUS_MAP[statusName] ?? 'SCHEDULED',
       homeScore: home?.score ? Number(home.score) : undefined,
       awayScore: away?.score ? Number(away.score) : undefined,
+      period,
+      displayClock,
       spread,
       overUnder,
       homeMoneyLine,

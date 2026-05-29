@@ -122,6 +122,14 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
               </span>
               <span className="text-xs text-slate-500">{formatGameTime(ev.startsAt)}</span>
             </div>
+            {(isLive || ev.status === 'FINAL') && ev.homeScore != null && ev.awayScore != null && (
+              <div className="mt-2 text-sm font-bold text-slate-200">
+                {lastWord(ev.awayTeam)} {ev.awayScore} — {ev.homeScore} {lastWord(ev.homeTeam)}
+                {isLive && ev.displayClock && (
+                  <span className="ml-2 text-xs font-semibold text-live">{ev.displayClock}</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -316,6 +324,10 @@ function Stat({
       </div>
     </div>
   );
+}
+
+function lastWord(s: string): string {
+  return s.split(' ').slice(-1)[0] ?? s;
 }
 
 function SiblingLink({ id, label, text }: { id: string; label: string; text: string }): JSX.Element {

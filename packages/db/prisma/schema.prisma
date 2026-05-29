@@ -53,6 +53,9 @@ model Event {
   status         EventStatus @default(SCHEDULED)
   homeScore      Int?
   awayScore      Int?
+  // Live game state, refreshed each poll while the game is in progress.
+  period         Int?        // quarter / inning / period number
+  displayClock   String?     // e.g. "5:23", "Top 7th", "Halftime"
   resolvedAt     DateTime?
   // Snapshot of ESPN odds at last poll — used by bots for fair-value pricing.
   spread         Float?

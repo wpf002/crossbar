@@ -27,6 +27,10 @@ export interface EventBrief {
   awayTeam: string;
   startsAt: string;
   status: 'SCHEDULED' | 'LIVE' | 'FINAL' | 'POSTPONED' | 'CANCELED';
+  homeScore?: number | null;
+  awayScore?: number | null;
+  period?: number | null;
+  displayClock?: string | null;
 }
 
 export interface MarketListItem {

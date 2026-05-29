@@ -77,12 +77,12 @@ export function GameRow({ markets, spark }: Props): JSX.Element | null {
             ) : null}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-xs text-slate-500">
-              {isLive ? 'Live now' : formatGameTime(ev.startsAt)}
+            <div className={cn('text-xs', isLive ? 'font-semibold text-live' : 'text-slate-500')}>
+              {isLive ? (ev.displayClock ?? 'Live now') : formatGameTime(ev.startsAt)}
             </div>
             <div className="mt-1 space-y-1">
-              <TeamLine team={ev.awayTeam} />
-              <TeamLine team={ev.homeTeam} />
+              <TeamLine team={ev.awayTeam} score={ev.awayScore} />
+              <TeamLine team={ev.homeTeam} score={ev.homeScore} />
             </div>
             <div className="mt-2 flex items-center gap-3">
               {spark && spark.length > 1 && (
@@ -148,11 +148,14 @@ export function GameRow({ markets, spark }: Props): JSX.Element | null {
   );
 }
 
-function TeamLine({ team }: { team: string }): JSX.Element {
+function TeamLine({ team, score }: { team: string; score?: number | null }): JSX.Element {
   return (
-    <div className="flex items-center gap-2">
-      <TeamMark team={team} size="sm" />
-      <span className="truncate text-sm font-semibold text-slate-100">{team}</span>
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <TeamMark team={team} size="sm" />
+        <span className="truncate text-sm font-semibold text-slate-100">{team}</span>
+      </div>
+      {score != null && <span className="tabular text-sm font-bold text-slate-200">{score}</span>}
     </div>
   );
 }
