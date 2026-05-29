@@ -19,7 +19,12 @@ interface Props {
   spark?: number[];
 }
 
-const TYPE_ORDER: Record<MarketType, number> = { SPREAD: 0, TOTAL: 1, MONEYLINE: 2 };
+const TYPE_ORDER: Record<MarketType, number> = {
+  SPREAD: 0,
+  TOTAL: 1,
+  MONEYLINE: 2,
+  PLAYER_TOTAL: 3,
+};
 
 export function GameRow({ markets, spark }: Props): JSX.Element | null {
   const router = useRouter();

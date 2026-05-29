@@ -1,5 +1,12 @@
 export type SportId = 'mlb' | 'nfl' | 'nba' | 'nhl';
-export type MarketType = 'MONEYLINE' | 'TOTAL' | 'SPREAD';
+export type MarketType = 'MONEYLINE' | 'TOTAL' | 'SPREAD' | 'PLAYER_TOTAL';
+
+export interface PlayerBrief {
+  id: string;
+  name: string;
+  team: string;
+  position: string | null;
+}
 export type MarketStatus = 'OPEN' | 'CLOSED' | 'RESOLVED' | 'VOIDED';
 export type Outcome = 'YES' | 'NO';
 export type OrderSide = 'BUY' | 'SELL';
@@ -30,6 +37,8 @@ export interface MarketListItem {
   noLabel: string;
   line: number | null;
   status: MarketStatus;
+  statKey?: string | null;
+  player?: PlayerBrief | null;
   event: EventBrief;
   topOfBook: {
     yesBid: number | null;

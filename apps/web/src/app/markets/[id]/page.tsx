@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardSubtitle, CardTitle } from '@/components/ui/card';
 import { TeamMark } from '@/components/team-mark';
 import { useSlip } from '@/lib/slip';
-import { formatDollars, formatGameTime, formatPrice } from '@/lib/format';
+import { formatDollars, formatGameTime, formatPrice, marketTypeLabel } from '@/lib/format';
 import { cn } from '@/lib/cn';
 
 export default function MarketDetailPage({ params }: { params: { id: string } }): JSX.Element {
@@ -58,6 +58,14 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
     enabled: !!token,
     refetchInterval: 30_000,
   });
+  // Sibling markets on the same event — lets users jump between game lines and
+  // the player props for this matchup.
+  const relatedQ = useQuery({
+    queryKey: ['markets', 'event', marketQ.data?.event.id],
+    queryFn: () => api.listMarkets({ eventId: marketQ.data!.event.id }),
+    enabled: !!marketQ.data?.event.id,
+    refetchInterval: 60_000,
+  });
 
   const market = marketQ.data;
   if (marketQ.isLoading) return <div className="h-64 animate-pulse rounded-lg bg-slate-900/40" />;
@@ -71,6 +79,9 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
 
   const ev = market.event;
   const isLive = ev.status === 'LIVE';
+  const siblings = (relatedQ.data ?? []).filter((m) => m.id !== market.id);
+  const propSiblings = siblings.filter((m) => m.type === 'PLAYER_TOTAL');
+  const gameSiblings = siblings.filter((m) => m.type !== 'PLAYER_TOTAL');
 
   return (
     <div className="space-y-4">
@@ -88,11 +99,17 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="brand">{ev.sportId.toUpperCase()}</Badge>
-              <Badge tone="neutral">{market.type}</Badge>
+              <Badge tone="neutral">{marketTypeLabel(market.type)}</Badge>
               {isLive && <Badge tone="live">LIVE</Badge>}
               {ev.status === 'FINAL' && <Badge tone="neutral">FINAL</Badge>}
             </div>
             <h1 className="mt-3 text-xl font-bold text-slate-50 sm:text-2xl">{market.question}</h1>
+            {market.player && (
+              <div className="mt-1 text-sm font-medium text-slate-400">
+                {market.player.name}
+                {market.player.position ? ` · ${market.player.position}` : ''} · {market.player.team}
+              </div>
+            )}
             <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-slate-300">
               <span className="inline-flex items-center gap-2">
                 <TeamMark team={ev.awayTeam} size="sm" />
@@ -240,6 +257,33 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
               </CardSubtitle>
             </Card>
           ) : null}
+
+          {gameSiblings.length > 0 && (
+            <Card>
+              <CardTitle className="text-sm">More markets for this game</CardTitle>
+              <div className="mt-3 space-y-1.5">
+                {gameSiblings.map((m) => (
+                  <SiblingLink key={m.id} id={m.id} label={marketTypeLabel(m.type)} text={m.question} />
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {propSiblings.length > 0 && (
+            <Card>
+              <CardTitle className="text-sm">Player props</CardTitle>
+              <div className="mt-3 space-y-1.5">
+                {propSiblings.map((m) => (
+                  <SiblingLink
+                    key={m.id}
+                    id={m.id}
+                    label={m.player?.name ?? 'Prop'}
+                    text={m.question}
+                  />
+                ))}
+              </div>
+            </Card>
+          )}
         </aside>
       </div>
     </div>
@@ -271,6 +315,18 @@ function Stat({
         {value}
       </div>
     </div>
+  );
+}
+
+function SiblingLink({ id, label, text }: { id: string; label: string; text: string }): JSX.Element {
+  return (
+    <Link
+      href={`/markets/${id}`}
+      className="block rounded-md border border-slate-800 bg-slate-900/40 px-3 py-2 transition-colors hover:border-slate-700"
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="truncate text-xs text-slate-300">{text}</div>
+    </Link>
   );
 }
 

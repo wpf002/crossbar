@@ -126,13 +126,14 @@ export const api = {
   },
 
   // ─── Markets (public) ───────────────────────────────────────────────────
-  listMarkets: (opts: { sport?: SportId | SportId[]; type?: string } = {}) => {
+  listMarkets: (opts: { sport?: SportId | SportId[]; type?: string; eventId?: string } = {}) => {
     const params = new URLSearchParams();
     if (opts.sport) {
       const v = Array.isArray(opts.sport) ? opts.sport.join(',') : opts.sport;
       params.set('sport', v);
     }
     if (opts.type) params.set('type', opts.type);
+    if (opts.eventId) params.set('eventId', opts.eventId);
     const qs = params.toString();
     return request<MarketListItem[]>(`/markets${qs ? `?${qs}` : ''}`);
   },
@@ -221,8 +222,10 @@ export const api = {
 
   adminCreateMarket: (body: {
     eventId: string;
-    type: 'MONEYLINE' | 'TOTAL' | 'SPREAD';
+    type: 'MONEYLINE' | 'TOTAL' | 'SPREAD' | 'PLAYER_TOTAL';
     line?: number;
+    playerId?: string;
+    statKey?: string;
     question?: string;
     yesLabel?: string;
     noLabel?: string;
@@ -232,6 +235,23 @@ export const api = {
       json: body,
       auth: true,
     }),
+
+  adminPropsCatalog: () =>
+    request<Record<string, Array<{ statKey: string; label: string; unit: string; defaultLine: number }>>>(
+      '/admin/props/catalog',
+      { auth: true },
+    ),
+
+  adminEventPlayers: (eventId: string) =>
+    request<
+      Array<{
+        playerId: string;
+        name: string;
+        team: string;
+        position: string | null;
+        stats: Record<string, number>;
+      }>
+    >(`/admin/events/${eventId}/players`, { auth: true }),
 
   adminCloseMarket: (id: string) =>
     request<{ market: AdminMarketBrief; canceledOrderIds: string[] }>(

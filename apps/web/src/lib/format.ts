@@ -1,3 +1,19 @@
+/** Human label for a market type (PLAYER_TOTAL → "Player prop"). */
+export function marketTypeLabel(type: string): string {
+  switch (type) {
+    case 'MONEYLINE':
+      return 'Moneyline';
+    case 'TOTAL':
+      return 'Total';
+    case 'SPREAD':
+      return 'Spread';
+    case 'PLAYER_TOTAL':
+      return 'Player prop';
+    default:
+      return type;
+  }
+}
+
 /** Format cents as $X.YZ. */
 export function formatDollars(cents: number): string {
   const sign = cents < 0 ? '-' : '';

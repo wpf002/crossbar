@@ -158,7 +158,7 @@ describe('GET /admin/props/catalog and /events/:id/players', () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, { statKey: string }[]>;
-    expect(body.nfl.some((p) => p.statKey === 'passingYards')).toBe(true);
+    expect(body.nfl!.some((p) => p.statKey === 'passingYards')).toBe(true);
   });
 
   it('lists players with recorded stats for an event', async () => {

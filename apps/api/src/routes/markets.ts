@@ -16,6 +16,7 @@ const ListMarketsQuery = z.object({
     .optional()
     .transform((s) => (s ? s.split(',').map((v) => v.trim().toUpperCase()) : undefined))
     .pipe(z.array(z.enum(['MONEYLINE', 'TOTAL', 'SPREAD', 'PLAYER_TOTAL'])).optional()),
+  eventId: z.string().optional(),
 });
 
 const PaginationSchema = z.object({
@@ -100,12 +101,13 @@ function truncateLevels(snap: OrderBookSnapshot, limit: number): OrderBookSnapsh
 export default function marketsRoutes(redis: Redis | null) {
   return async function (fastify: FastifyInstance): Promise<void> {
     fastify.get('/', async (req) => {
-      const { sport, type } = ListMarketsQuery.parse(req.query);
+      const { sport, type, eventId } = ListMarketsQuery.parse(req.query);
       const markets = await prisma.market.findMany({
         where: {
           status: 'OPEN',
           ...(type && type.length > 0 ? { type: { in: type } } : {}),
           ...(sport && sport.length > 0 ? { event: { sportId: { in: sport } } } : {}),
+          ...(eventId ? { eventId } : {}),
         },
         include: {
           event: {
