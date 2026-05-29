@@ -23,7 +23,8 @@ const TYPE_ORDER: Record<MarketType, number> = {
   SPREAD: 0,
   TOTAL: 1,
   MONEYLINE: 2,
-  PLAYER_TOTAL: 3,
+  PERIOD_WINNER: 3,
+  PLAYER_TOTAL: 4,
 };
 
 export function GameRow({ markets, spark }: Props): JSX.Element | null {

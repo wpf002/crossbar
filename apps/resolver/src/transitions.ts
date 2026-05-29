@@ -22,9 +22,19 @@ export async function applyEventTransitions(
   for (const market of markets) {
     try {
       if (event.status === 'LIVE') {
-        // Live in-game markets: game lines and player props both stay OPEN and
-        // trade through the game. The order book reprices off the live score;
-        // everything settles at FINAL. (Nothing to do on the LIVE transition.)
+        // Live in-game markets: game lines and player props stay OPEN and trade
+        // through the game, settling at FINAL. Period-winner markets settle as
+        // soon as their period ends — i.e. once the live period has advanced
+        // past them — so each quarter/inning has its own resolution window.
+        if (
+          market.type === 'PERIOD_WINNER' &&
+          market.status === 'OPEN' &&
+          market.period != null &&
+          event.period != null &&
+          event.period > market.period
+        ) {
+          await resolveMarketFromEvent(market, event, deps);
+        }
       } else if (event.status === 'FINAL') {
         if (market.status === 'RESOLVED' || market.status === 'VOIDED') continue;
         await resolveMarketFromEvent(market, event, deps);

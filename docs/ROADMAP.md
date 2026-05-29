@@ -31,7 +31,7 @@
 
 ---
 
-## Phase 3 (remainder) — Finish what's scoped
+## Phase 3 (remainder) — Finish what's scoped ✓
 
 ### Player props markets ✓
 - ✓ `Player` + `PlayerStat` models; ESPN summary (box-score) endpoint
@@ -51,9 +51,10 @@
 - ✓ Live game lines: markets (game lines + player props) now stay OPEN and
   trade through the game, repricing off the live score, settling at FINAL —
   replaces the old close-at-LIVE behavior
-- ⏳ Per-quarter / per-inning resolution windows — **product + data decision**:
-  define the markets ("winner of Q2", "runs in inning 7") and source per-period
-  scoring from ESPN before building resolution.
+- ✓ Per-quarter / per-inning resolution windows: `PERIOD_WINNER` markets
+  (who outscores whom each quarter/period/inning) auto-open at game start
+  (`LIVE_PERIOD_MARKETS`, on by default) from ESPN linescores, and each settles
+  the moment its period ends — distinct resolution window per period
 
 ---
 

@@ -58,12 +58,28 @@ export async function fetchScoreboard(sport: SportId): Promise<SportEvent[]> {
       awayScore: away?.score ? Number(away.score) : undefined,
       period,
       displayClock,
+      homeLinescores: parseLinescores(home?.linescores),
+      awayLinescores: parseLinescores(away?.linescores),
       spread,
       overUnder,
       homeMoneyLine,
       awayMoneyLine,
     };
   });
+}
+
+/**
+ * Map an ESPN `linescores` array (e.g. [{ value: 7 }, { value: 3 }]) to a
+ * plain number[] of per-period scores. Returns undefined when absent.
+ */
+export function parseLinescores(raw: unknown): number[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const out: number[] = [];
+  for (const cell of raw) {
+    const v = Number((cell as any)?.value ?? (cell as any)?.displayValue);
+    out.push(Number.isFinite(v) ? v : 0);
+  }
+  return out;
 }
 
 /**

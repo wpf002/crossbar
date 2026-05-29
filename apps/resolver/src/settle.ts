@@ -1,7 +1,12 @@
 import type { Event, Market, PrismaClient } from '@prisma/client';
 import type { Logger } from 'pino';
 import { resolveMarket } from '@crossbar/engine';
-import { computeOutcome, computePlayerOutcome, type Outcome } from './pricing.js';
+import {
+  computeOutcome,
+  computePlayerOutcome,
+  computePeriodOutcome,
+  type Outcome,
+} from './pricing.js';
 
 export interface SettleDeps {
   prisma: PrismaClient;
@@ -16,7 +21,9 @@ export async function resolveMarketFromEvent(
   const outcome =
     market.type === 'PLAYER_TOTAL'
       ? await computePlayerMarketOutcome(market, event, deps.prisma)
-      : computeOutcome(market, event);
+      : market.type === 'PERIOD_WINNER'
+        ? computePeriodOutcome(event.homeLinescores, event.awayLinescores, market.period ?? 0)
+        : computeOutcome(market, event);
 
   const result = await resolveMarket(deps.prisma, market.id, outcome);
   deps.log.info(

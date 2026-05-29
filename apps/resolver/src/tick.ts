@@ -4,6 +4,7 @@ import type { SportId } from '@crossbar/shared';
 import { ingestSport } from './ingest.js';
 import { ingestPlayerStats } from './players.js';
 import { ensurePlayerPropMarkets } from './prop-markets.js';
+import { ensurePeriodMarkets } from './period-markets.js';
 import { applyEventTransitions } from './transitions.js';
 
 export interface TickDeps {
@@ -11,6 +12,8 @@ export interface TickDeps {
   log: Logger;
   /** Auto-generate player-prop markets from live box scores. */
   autogenProps?: boolean;
+  /** Auto-generate per-period winner markets for live games. */
+  periodMarkets?: boolean;
 }
 
 /**
@@ -30,6 +33,9 @@ export async function runTick(sports: readonly SportId[], deps: TickDeps): Promi
         if (deps.autogenProps && event.status === 'LIVE') {
           await ensurePlayerPropMarkets(event, players, { prisma, log });
         }
+      }
+      if (deps.periodMarkets && event.status === 'LIVE') {
+        await ensurePeriodMarkets(event, { prisma, log });
       }
       await applyEventTransitions(event, { prisma, log });
     }

@@ -54,3 +54,23 @@ export function computePlayerOutcome(
   if (statValue < line) return 'NO';
   return 'INVALID';
 }
+
+/**
+ * Period-winner outcome: did home outscore away in the given period? Pure.
+ * YES if home's period score > away's, NO if less, INVALID for a tie (push) or
+ * a period with no recorded scores on either side (never played → refund).
+ */
+export function computePeriodOutcome(
+  homeLinescores: number[],
+  awayLinescores: number[],
+  period: number,
+): Outcome {
+  const idx = period - 1;
+  if (idx < 0) return 'INVALID';
+  const home = homeLinescores[idx];
+  const away = awayLinescores[idx];
+  if (home == null || away == null) return 'INVALID';
+  if (home > away) return 'YES';
+  if (home < away) return 'NO';
+  return 'INVALID';
+}

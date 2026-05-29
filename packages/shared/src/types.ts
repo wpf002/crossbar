@@ -49,6 +49,9 @@ export interface SportEvent {
   period?: number;
   /** Human-readable game clock, e.g. "5:23" or "Top 7th" (live games). */
   displayClock?: string;
+  /** Per-period scores (index 0 = period 1) for home/away, when published. */
+  homeLinescores?: number[];
+  awayLinescores?: number[];
   /** Spread: negative = home favored (e.g. home -3.5 means -3.5). */
   spread?: number;
   /** Combined points/runs/goals line for OVER/UNDER. */

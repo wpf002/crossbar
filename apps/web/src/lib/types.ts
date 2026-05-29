@@ -1,5 +1,5 @@
 export type SportId = 'mlb' | 'nfl' | 'nba' | 'nhl';
-export type MarketType = 'MONEYLINE' | 'TOTAL' | 'SPREAD' | 'PLAYER_TOTAL';
+export type MarketType = 'MONEYLINE' | 'TOTAL' | 'SPREAD' | 'PLAYER_TOTAL' | 'PERIOD_WINNER';
 
 export interface PlayerBrief {
   id: string;
@@ -42,6 +42,7 @@ export interface MarketListItem {
   line: number | null;
   status: MarketStatus;
   statKey?: string | null;
+  period?: number | null;
   player?: PlayerBrief | null;
   event: EventBrief;
   topOfBook: {

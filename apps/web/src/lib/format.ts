@@ -9,6 +9,8 @@ export function marketTypeLabel(type: string): string {
       return 'Spread';
     case 'PLAYER_TOTAL':
       return 'Player prop';
+    case 'PERIOD_WINNER':
+      return 'Period';
     default:
       return type;
   }

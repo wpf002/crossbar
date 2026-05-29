@@ -81,7 +81,12 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
   const isLive = ev.status === 'LIVE';
   const siblings = (relatedQ.data ?? []).filter((m) => m.id !== market.id);
   const propSiblings = siblings.filter((m) => m.type === 'PLAYER_TOTAL');
-  const gameSiblings = siblings.filter((m) => m.type !== 'PLAYER_TOTAL');
+  const periodSiblings = siblings
+    .filter((m) => m.type === 'PERIOD_WINNER')
+    .sort((a, b) => (a.period ?? 0) - (b.period ?? 0));
+  const gameSiblings = siblings.filter(
+    (m) => m.type !== 'PLAYER_TOTAL' && m.type !== 'PERIOD_WINNER',
+  );
 
   return (
     <div className="space-y-4">
@@ -271,6 +276,17 @@ export default function MarketDetailPage({ params }: { params: { id: string } })
               <CardTitle className="text-sm">More markets for this game</CardTitle>
               <div className="mt-3 space-y-1.5">
                 {gameSiblings.map((m) => (
+                  <SiblingLink key={m.id} id={m.id} label={marketTypeLabel(m.type)} text={m.question} />
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {periodSiblings.length > 0 && (
+            <Card>
+              <CardTitle className="text-sm">By period</CardTitle>
+              <div className="mt-3 space-y-1.5">
+                {periodSiblings.map((m) => (
                   <SiblingLink key={m.id} id={m.id} label={marketTypeLabel(m.type)} text={m.question} />
                 ))}
               </div>

@@ -8,6 +8,10 @@ import { liveSports, runTick, type TickDeps } from './tick.js';
 // prop volume is large, so the operator opts in explicitly.
 const AUTOGEN_PROPS = process.env.PLAYER_PROPS_AUTOGEN === 'true';
 
+// Auto-generate per-period winner markets for live games. On by default —
+// bounded volume (a handful per game) and it's the core live-markets feature.
+const PERIOD_MARKETS = process.env.LIVE_PERIOD_MARKETS !== 'false';
+
 // How often to re-poll sports with a game in progress. ESPN scoreboards update
 // within a few seconds; 10s keeps live scores/props fresh without hammering.
 const LIVE_POLL_SECONDS = clampInt(process.env.LIVE_POLL_SECONDS, 10, 5, 60);
@@ -19,7 +23,12 @@ const log = pino({
       : undefined,
 });
 
-const deps: TickDeps = { prisma, log, autogenProps: AUTOGEN_PROPS };
+const deps: TickDeps = {
+  prisma,
+  log,
+  autogenProps: AUTOGEN_PROPS,
+  periodMarkets: PERIOD_MARKETS,
+};
 
 // A single guard serializes the full and live ticks so they never overlap and
 // double-ingest the same event.

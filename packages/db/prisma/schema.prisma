@@ -56,6 +56,8 @@ model Event {
   // Live game state, refreshed each poll while the game is in progress.
   period         Int?        // quarter / inning / period number
   displayClock   String?     // e.g. "5:23", "Top 7th", "Halftime"
+  homeLinescores Int[]       @default([]) // per-period scores, index 0 = period 1
+  awayLinescores Int[]       @default([])
   resolvedAt     DateTime?
   // Snapshot of ESPN odds at last poll — used by bots for fair-value pricing.
   spread         Float?
@@ -130,6 +132,8 @@ model Market {
   playerId   String?
   player     Player?      @relation(fields: [playerId], references: [id])
   statKey    String?      // e.g. "rushingYards", "points", "hits", "goals"
+  // Period-winner markets only: which period (quarter/inning) this market is on.
+  period     Int?
 
   orders    Order[]
   trades    Trade[]
@@ -146,6 +150,7 @@ enum MarketType {
   TOTAL
   SPREAD
   PLAYER_TOTAL
+  PERIOD_WINNER
 }
 
 enum MarketStatus {

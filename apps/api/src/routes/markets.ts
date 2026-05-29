@@ -15,7 +15,9 @@ const ListMarketsQuery = z.object({
     .string()
     .optional()
     .transform((s) => (s ? s.split(',').map((v) => v.trim().toUpperCase()) : undefined))
-    .pipe(z.array(z.enum(['MONEYLINE', 'TOTAL', 'SPREAD', 'PLAYER_TOTAL'])).optional()),
+    .pipe(
+      z.array(z.enum(['MONEYLINE', 'TOTAL', 'SPREAD', 'PLAYER_TOTAL', 'PERIOD_WINNER'])).optional(),
+    ),
   eventId: z.string().optional(),
 });
 
@@ -148,6 +150,7 @@ export default function marketsRoutes(redis: Redis | null) {
           line: m.line,
           status: m.status,
           statKey: m.statKey,
+          period: m.period,
           player: m.player,
           event: {
             id: m.event.id,
@@ -236,6 +239,7 @@ export default function marketsRoutes(redis: Redis | null) {
         status: m.status,
         outcome: m.outcome,
         statKey: m.statKey,
+        period: m.period,
         player: m.player,
         closedAt: m.closedAt?.toISOString() ?? null,
         resolvedAt: m.resolvedAt?.toISOString() ?? null,

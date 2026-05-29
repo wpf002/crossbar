@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeOutcome, computePlayerOutcome } from './pricing.js';
+import { computeOutcome, computePlayerOutcome, computePeriodOutcome } from './pricing.js';
 
 function mkMarket(type: 'MONEYLINE' | 'TOTAL' | 'SPREAD', line: number | null = null) {
   return { type, line };
@@ -109,6 +109,33 @@ describe('pricing.computeOutcome', () => {
 
     it('NaN stat → INVALID', () => {
       expect(computePlayerOutcome(45.5, Number.NaN)).toBe('INVALID');
+    });
+  });
+
+  describe('PERIOD_WINNER (computePeriodOutcome)', () => {
+    const home = [7, 3, 10, 0];
+    const away = [0, 3, 7, 14];
+
+    it('home outscores away in the period → YES', () => {
+      expect(computePeriodOutcome(home, away, 1)).toBe('YES'); // 7 vs 0
+      expect(computePeriodOutcome(home, away, 3)).toBe('YES'); // 10 vs 7
+    });
+
+    it('away outscores home → NO', () => {
+      expect(computePeriodOutcome(home, away, 4)).toBe('NO'); // 0 vs 14
+    });
+
+    it('tied period → INVALID (push)', () => {
+      expect(computePeriodOutcome(home, away, 2)).toBe('INVALID'); // 3 vs 3
+    });
+
+    it('period not yet played / missing → INVALID', () => {
+      expect(computePeriodOutcome(home, away, 5)).toBe('INVALID');
+      expect(computePeriodOutcome([], [], 1)).toBe('INVALID');
+    });
+
+    it('period < 1 → INVALID', () => {
+      expect(computePeriodOutcome(home, away, 0)).toBe('INVALID');
     });
   });
 
