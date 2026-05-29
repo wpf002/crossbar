@@ -23,6 +23,19 @@ export interface OrderBookSnapshot {
   lastTradeAt?: string;
 }
 
+/**
+ * A single player's normalized stat line for one game, extracted from the
+ * ESPN box score. `stats` keys match ESPN's camelCase stat keys (e.g.
+ * "rushingYards", "points") — the same keys the prop catalog references.
+ */
+export interface PlayerStatLine {
+  externalId: string; // ESPN athlete id
+  name: string;
+  team: string; // team display name
+  position?: string;
+  stats: Record<string, number>;
+}
+
 export interface SportEvent {
   externalId: string;
   sportId: SportId;

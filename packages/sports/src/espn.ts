@@ -1,4 +1,4 @@
-import type { SportEvent, SportId } from '@crossbar/shared';
+import type { PlayerStatLine, SportEvent, SportId } from '@crossbar/shared';
 
 const PATHS: Record<SportId, string> = {
   mlb: 'baseball/mlb',
@@ -55,4 +55,94 @@ export async function fetchScoreboard(sport: SportId): Promise<SportEvent[]> {
       awayMoneyLine,
     };
   });
+}
+
+/**
+ * Fetch per-player box-score stats for a single event from ESPN's summary
+ * endpoint. Returns one normalized stat line per player (merged across all
+ * stat categories — a player who appears in both "rushing" and "receiving"
+ * gets one line with both). Empty array if the box score isn't published yet.
+ */
+export async function fetchEventPlayerStats(
+  sport: SportId,
+  eventExternalId: string,
+): Promise<PlayerStatLine[]> {
+  const base = process.env.ESPN_API_BASE ?? 'https://site.api.espn.com/apis/site/v2/sports';
+  const url = `${base}/${PATHS[sport]}/summary?event=${encodeURIComponent(eventExternalId)}`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`ESPN ${sport} summary fetch failed: ${res.status}`);
+  const data = (await res.json()) as any;
+
+  return parseBoxscorePlayers(data?.boxscore?.players ?? []);
+}
+
+/**
+ * Parse ESPN `boxscore.players` (one entry per team) into normalized stat
+ * lines. Exported for testing — pure, no I/O.
+ */
+export function parseBoxscorePlayers(teams: any[]): PlayerStatLine[] {
+  const byId = new Map<string, PlayerStatLine>();
+
+  for (const team of teams ?? []) {
+    const teamName: string = team?.team?.displayName ?? 'Unknown';
+    for (const category of team?.statistics ?? []) {
+      const keys: string[] = category?.keys ?? [];
+      for (const entry of category?.athletes ?? []) {
+        const athlete = entry?.athlete;
+        const id = athlete?.id != null ? String(athlete.id) : undefined;
+        if (!id) continue;
+        const statsArr: unknown[] = entry?.stats ?? [];
+
+        let line = byId.get(id);
+        if (!line) {
+          line = {
+            externalId: id,
+            name: athlete?.displayName ?? 'Unknown',
+            team: teamName,
+            position: athlete?.position?.abbreviation ?? undefined,
+            stats: {},
+          };
+          byId.set(id, line);
+        }
+
+        for (let i = 0; i < keys.length; i++) {
+          assignStat(line.stats, keys[i], statsArr[i]);
+        }
+      }
+    }
+  }
+
+  return [...byId.values()];
+}
+
+/**
+ * Assign one box-score cell. ESPN packs paired stats into a single key/value
+ * (e.g. key "fieldGoalsMade-fieldGoalsAttempted", value "5-12"); split those
+ * into separate numeric keys. Non-numeric cells (e.g. "20:14" minutes) are
+ * dropped.
+ */
+function assignStat(
+  stats: Record<string, number>,
+  key: string | undefined,
+  raw: unknown,
+): void {
+  if (!key || raw == null) return;
+  const value = String(raw);
+
+  const sep = key.includes('-') ? '-' : key.includes('/') ? '/' : null;
+  if (sep) {
+    const subKeys = key.split(sep);
+    const subVals = value.split(sep);
+    if (subKeys.length >= 2 && subKeys.length === subVals.length) {
+      for (let i = 0; i < subKeys.length; i++) {
+        const n = Number(subVals[i]);
+        if (Number.isFinite(n)) stats[subKeys[i]] = n;
+      }
+      return;
+    }
+  }
+
+  const n = Number(value);
+  if (Number.isFinite(n)) stats[key] = n;
 }

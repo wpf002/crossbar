@@ -3,6 +3,7 @@ import pino from 'pino';
 import { prisma } from '@crossbar/db';
 import { SPORTS, type SportId } from '@crossbar/shared';
 import { ingestSport } from './ingest.js';
+import { ingestPlayerStats } from './players.js';
 import { applyEventTransitions } from './transitions.js';
 
 const log = pino({
@@ -25,6 +26,11 @@ async function tick(): Promise<void> {
     for (const sport of SPORTS) {
       const result = await ingestSport(sport as SportId, { prisma, log });
       for (const event of result.updatedEvents) {
+        // Pull box-score stats for in-progress/finished games before running
+        // transitions, so FINAL player-prop resolution reads the final line.
+        if (event.status === 'LIVE' || event.status === 'FINAL') {
+          await ingestPlayerStats(event, { prisma, log });
+        }
         await applyEventTransitions(event, { prisma, log });
       }
     }

@@ -36,9 +36,10 @@ model Wallet {
 
 // ─── Sports & Events ─────────────────────────────────────────────────────
 model Sport {
-  id     String  @id // 'mlb' | 'nfl' | 'nba' | 'nhl'
-  name   String
-  events Event[]
+  id      String   @id // 'mlb' | 'nfl' | 'nba' | 'nhl'
+  name    String
+  events  Event[]
+  players Player[]
 }
 
 model Event {
@@ -60,6 +61,7 @@ model Event {
   awayMoneyLine  Int?
 
   markets    Market[]
+  playerStats PlayerStat[]
 
   @@unique([sportId, externalId])
   @@index([startsAt])
@@ -74,6 +76,39 @@ enum EventStatus {
   CANCELED
 }
 
+// ─── Players & per-game stat lines ────────────────────────────────────────
+model Player {
+  id         String  @id @default(cuid())
+  sportId    String
+  sport      Sport   @relation(fields: [sportId], references: [id])
+  externalId String  // ESPN athlete id
+  name       String
+  team       String  // team display name at time of last sighting
+  position   String? // e.g. QB, RB, C, SP
+
+  markets    Market[]
+  stats      PlayerStat[]
+
+  @@unique([sportId, externalId])
+  @@index([name])
+}
+
+// One row per (player, event): the player's stat line for that game.
+// `stats` is a normalized map of statKey -> numeric value (e.g.
+// { "rushingYards": 84, "rushingTouchdowns": 1 }). Updated live and on FINAL.
+model PlayerStat {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id])
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  stats     Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventId, playerId])
+  @@index([eventId])
+}
+
 // ─── Markets ─────────────────────────────────────────────────────────────
 model Market {
   id         String       @id @default(cuid())
@@ -83,11 +118,15 @@ model Market {
   question   String
   yesLabel   String
   noLabel    String
-  line       Float?       // total points or spread value (null for moneyline)
+  line       Float?       // total/spread value, or the player-prop over/under threshold
   status     MarketStatus @default(OPEN)
   outcome    Outcome?     // set on resolution
   closedAt   DateTime?
   resolvedAt DateTime?
+  // Player-prop markets only: which player and which stat the line is on.
+  playerId   String?
+  player     Player?      @relation(fields: [playerId], references: [id])
+  statKey    String?      // e.g. "rushingYards", "points", "hits", "goals"
 
   orders    Order[]
   trades    Trade[]
@@ -96,12 +135,14 @@ model Market {
 
   @@index([status])
   @@index([eventId])
+  @@index([playerId])
 }
 
 enum MarketType {
   MONEYLINE
   TOTAL
   SPREAD
+  PLAYER_TOTAL
 }
 
 enum MarketStatus {

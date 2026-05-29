@@ -1,7 +1,11 @@
 export const SPORTS = ['mlb', 'nfl', 'nba', 'nhl'] as const;
 export type SportId = (typeof SPORTS)[number];
 
-export const MARKET_TYPES = ['MONEYLINE', 'TOTAL', 'SPREAD'] as const;
+export const MARKET_TYPES = ['MONEYLINE', 'TOTAL', 'SPREAD', 'PLAYER_TOTAL'] as const;
+export type MarketType = (typeof MARKET_TYPES)[number];
+
+/** Market types whose line/resolution is keyed off a single player's stat. */
+export const PLAYER_MARKET_TYPES = ['PLAYER_TOTAL'] as const;
 export const ORDER_SIDES = ['BUY', 'SELL'] as const;
 export const OUTCOMES = ['YES', 'NO'] as const;
 

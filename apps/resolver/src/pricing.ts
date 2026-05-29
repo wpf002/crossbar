@@ -39,3 +39,18 @@ export function computeOutcome(
       return 'INVALID';
   }
 }
+
+/**
+ * Player-prop outcome: did the player go OVER the line on the tracked stat?
+ * Pure, no I/O. INVALID for a missing line, missing stat, or exact push.
+ */
+export function computePlayerOutcome(
+  line: number | null,
+  statValue: number | null | undefined,
+): Outcome {
+  if (line == null) return 'INVALID';
+  if (statValue == null || Number.isNaN(statValue)) return 'INVALID';
+  if (statValue > line) return 'YES';
+  if (statValue < line) return 'NO';
+  return 'INVALID';
+}

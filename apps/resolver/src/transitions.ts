@@ -22,7 +22,9 @@ export async function applyEventTransitions(
   for (const market of markets) {
     try {
       if (event.status === 'LIVE') {
-        if (market.status === 'OPEN') {
+        // Game-line markets close once the game starts (no live betting on
+        // them). Player props stay open and trade live until the game ends.
+        if (market.status === 'OPEN' && market.type !== 'PLAYER_TOTAL') {
           await closeMarket(prisma, market.id);
           log.info({ marketId: market.id, eventId: event.id }, 'closed market (event LIVE)');
         }

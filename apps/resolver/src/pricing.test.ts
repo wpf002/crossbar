@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeOutcome } from './pricing.js';
+import { computeOutcome, computePlayerOutcome } from './pricing.js';
 
 function mkMarket(type: 'MONEYLINE' | 'TOTAL' | 'SPREAD', line: number | null = null) {
   return { type, line };
@@ -78,6 +78,37 @@ describe('pricing.computeOutcome', () => {
       expect(
         computeOutcome(mkMarket('SPREAD', null), { homeScore: 5, awayScore: 4 }),
       ).toBe('INVALID');
+    });
+  });
+
+  describe('PLAYER_TOTAL (computePlayerOutcome)', () => {
+    it('stat > line → YES (over)', () => {
+      expect(computePlayerOutcome(45.5, 84)).toBe('YES');
+    });
+
+    it('stat < line → NO (under)', () => {
+      expect(computePlayerOutcome(45.5, 31)).toBe('NO');
+    });
+
+    it('stat === line → INVALID (push)', () => {
+      expect(computePlayerOutcome(2, 2)).toBe('INVALID');
+    });
+
+    it('zero stat under a 0.5 line → NO', () => {
+      expect(computePlayerOutcome(0.5, 0)).toBe('NO');
+    });
+
+    it('null line → INVALID', () => {
+      expect(computePlayerOutcome(null, 10)).toBe('INVALID');
+    });
+
+    it('missing stat → INVALID', () => {
+      expect(computePlayerOutcome(45.5, null)).toBe('INVALID');
+      expect(computePlayerOutcome(45.5, undefined)).toBe('INVALID');
+    });
+
+    it('NaN stat → INVALID', () => {
+      expect(computePlayerOutcome(45.5, Number.NaN)).toBe('INVALID');
     });
   });
 
