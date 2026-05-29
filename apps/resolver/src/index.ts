@@ -4,7 +4,12 @@ import { prisma } from '@crossbar/db';
 import { SPORTS, type SportId } from '@crossbar/shared';
 import { ingestSport } from './ingest.js';
 import { ingestPlayerStats } from './players.js';
+import { ensurePlayerPropMarkets } from './prop-markets.js';
 import { applyEventTransitions } from './transitions.js';
+
+// Auto-generate player-prop markets from live box scores. Off by default —
+// prop volume is large, so the operator opts in explicitly.
+const AUTOGEN_PROPS = process.env.PLAYER_PROPS_AUTOGEN === 'true';
 
 const log = pino({
   transport:
@@ -29,7 +34,10 @@ async function tick(): Promise<void> {
         // Pull box-score stats for in-progress/finished games before running
         // transitions, so FINAL player-prop resolution reads the final line.
         if (event.status === 'LIVE' || event.status === 'FINAL') {
-          await ingestPlayerStats(event, { prisma, log });
+          const { players } = await ingestPlayerStats(event, { prisma, log });
+          if (AUTOGEN_PROPS && event.status === 'LIVE') {
+            await ensurePlayerPropMarkets(event, players, { prisma, log });
+          }
         }
         await applyEventTransitions(event, { prisma, log });
       }

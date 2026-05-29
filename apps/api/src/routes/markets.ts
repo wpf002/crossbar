@@ -15,7 +15,7 @@ const ListMarketsQuery = z.object({
     .string()
     .optional()
     .transform((s) => (s ? s.split(',').map((v) => v.trim().toUpperCase()) : undefined))
-    .pipe(z.array(z.enum(['MONEYLINE', 'TOTAL', 'SPREAD'])).optional()),
+    .pipe(z.array(z.enum(['MONEYLINE', 'TOTAL', 'SPREAD', 'PLAYER_TOTAL'])).optional()),
 });
 
 const PaginationSchema = z.object({
@@ -118,6 +118,7 @@ export default function marketsRoutes(redis: Redis | null) {
               status: true,
             },
           },
+          player: { select: { id: true, name: true, team: true, position: true } },
         },
         orderBy: { event: { startsAt: 'asc' } },
       });
@@ -140,6 +141,8 @@ export default function marketsRoutes(redis: Redis | null) {
           noLabel: m.noLabel,
           line: m.line,
           status: m.status,
+          statKey: m.statKey,
+          player: m.player,
           event: {
             id: m.event.id,
             sportId: m.event.sportId,
@@ -195,6 +198,7 @@ export default function marketsRoutes(redis: Redis | null) {
               status: true,
             },
           },
+          player: { select: { id: true, name: true, team: true, position: true } },
         },
       });
       if (!m) throw new HttpError(404, 'NOT_FOUND', 'Market not found');
@@ -217,6 +221,8 @@ export default function marketsRoutes(redis: Redis | null) {
         line: m.line,
         status: m.status,
         outcome: m.outcome,
+        statKey: m.statKey,
+        player: m.player,
         closedAt: m.closedAt?.toISOString() ?? null,
         resolvedAt: m.resolvedAt?.toISOString() ?? null,
         event: {

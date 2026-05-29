@@ -11,6 +11,8 @@ beforeEach(async () => {
       "Position",
       "Wallet",
       "Market",
+      "PlayerStat",
+      "Player",
       "Event",
       "Sport",
       "User"

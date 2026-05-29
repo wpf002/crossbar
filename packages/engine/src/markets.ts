@@ -1,9 +1,13 @@
 import type { Event, Market, PrismaClient } from '@prisma/client';
+import { playerPropQuestion, propDef, type SportId } from '@crossbar/shared';
 
 export interface CreateMarketInput {
   eventId: string;
-  type: 'MONEYLINE' | 'TOTAL' | 'SPREAD';
+  type: 'MONEYLINE' | 'TOTAL' | 'SPREAD' | 'PLAYER_TOTAL';
   line?: number | null;
+  /** PLAYER_TOTAL only: the player and stat the line is on. */
+  playerId?: string;
+  statKey?: string;
   /** Override the auto-generated question text. */
   question?: string;
   yesLabel?: string;
@@ -29,6 +33,10 @@ export async function createMarket(
     throw new Error(`Market type ${input.type} requires a numeric line`);
   }
 
+  if (input.type === 'PLAYER_TOTAL') {
+    return createPlayerMarket(prisma, event, input);
+  }
+
   const { question, yesLabel, noLabel } = labelsFor(event, input);
   return prisma.market.create({
     data: {
@@ -38,6 +46,38 @@ export async function createMarket(
       question,
       yesLabel,
       noLabel,
+    },
+  });
+}
+
+async function createPlayerMarket(
+  prisma: PrismaClient,
+  event: Event,
+  input: CreateMarketInput,
+): Promise<Market> {
+  if (!input.playerId || !input.statKey) {
+    throw new Error('PLAYER_TOTAL markets require playerId and statKey');
+  }
+  const player = await prisma.player.findUnique({ where: { id: input.playerId } });
+  if (!player) {
+    throw new Error(`Player ${input.playerId} not found`);
+  }
+  if (player.sportId !== event.sportId) {
+    throw new Error('Player and event belong to different sports');
+  }
+
+  const line = input.line!;
+  const unit = propDef(event.sportId as SportId, input.statKey)?.unit ?? input.statKey;
+  return prisma.market.create({
+    data: {
+      eventId: event.id,
+      type: 'PLAYER_TOTAL',
+      playerId: player.id,
+      statKey: input.statKey,
+      line,
+      question: input.question ?? playerPropQuestion(player.name, unit, line),
+      yesLabel: input.yesLabel ?? `Over ${line}`,
+      noLabel: input.noLabel ?? `Under ${line}`,
     },
   });
 }

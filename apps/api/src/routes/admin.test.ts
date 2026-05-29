@@ -86,6 +86,111 @@ describe('POST /admin/markets', () => {
     expect(body.market.type).toBe('TOTAL');
     expect(body.market.line).toBe(47.5);
   });
+
+  it('creates a PLAYER_TOTAL prop bound to a player + stat', async () => {
+    const admin = await makeAdminUser(app);
+    await prisma.sport.upsert({ where: { id: 'nfl' }, update: {}, create: { id: 'nfl', name: 'NFL' } });
+    const event = await prisma.event.create({
+      data: {
+        sportId: 'nfl',
+        externalId: 'evt-prop-1',
+        homeTeam: 'A',
+        awayTeam: 'B',
+        startsAt: new Date(Date.now() + 3600_000),
+      },
+    });
+    const player = await prisma.player.create({
+      data: { sportId: 'nfl', externalId: 'ath-prop-1', name: 'Josh Allen', team: 'A', position: 'QB' },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/markets',
+      headers: bearer(admin.token),
+      payload: {
+        eventId: event.id,
+        type: 'PLAYER_TOTAL',
+        playerId: player.id,
+        statKey: 'passingYards',
+        line: 274.5,
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { market: { id: string; type: string; line: number } };
+    expect(body.market.type).toBe('PLAYER_TOTAL');
+
+    const saved = await prisma.market.findUniqueOrThrow({ where: { id: body.market.id } });
+    expect(saved.playerId).toBe(player.id);
+    expect(saved.statKey).toBe('passingYards');
+    expect(saved.question).toBe('Will Josh Allen record OVER 274.5 passing yards?');
+  });
+
+  it('rejects a PLAYER_TOTAL missing playerId/statKey', async () => {
+    const admin = await makeAdminUser(app);
+    await prisma.sport.upsert({ where: { id: 'nfl' }, update: {}, create: { id: 'nfl', name: 'NFL' } });
+    const event = await prisma.event.create({
+      data: {
+        sportId: 'nfl',
+        externalId: 'evt-prop-2',
+        homeTeam: 'A',
+        awayTeam: 'B',
+        startsAt: new Date(Date.now() + 3600_000),
+      },
+    });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/admin/markets',
+      headers: bearer(admin.token),
+      payload: { eventId: event.id, type: 'PLAYER_TOTAL', line: 274.5 },
+    });
+    expect(res.statusCode).toBe(422);
+  });
+});
+
+describe('GET /admin/props/catalog and /events/:id/players', () => {
+  it('returns the prop catalog', async () => {
+    const admin = await makeAdminUser(app);
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/props/catalog',
+      headers: bearer(admin.token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as Record<string, { statKey: string }[]>;
+    expect(body.nfl.some((p) => p.statKey === 'passingYards')).toBe(true);
+  });
+
+  it('lists players with recorded stats for an event', async () => {
+    const admin = await makeAdminUser(app);
+    await prisma.sport.upsert({ where: { id: 'nba' }, update: {}, create: { id: 'nba', name: 'NBA' } });
+    const event = await prisma.event.create({
+      data: {
+        sportId: 'nba',
+        externalId: 'evt-players-1',
+        homeTeam: 'A',
+        awayTeam: 'B',
+        startsAt: new Date(Date.now() + 3600_000),
+      },
+    });
+    const player = await prisma.player.create({
+      data: { sportId: 'nba', externalId: 'ath-players-1', name: 'Jayson Tatum', team: 'A', position: 'SF' },
+    });
+    await prisma.playerStat.create({
+      data: { eventId: event.id, playerId: player.id, stats: { points: 28, rebounds: 9 } },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/admin/events/${event.id}/players`,
+      headers: bearer(admin.token),
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { playerId: string; name: string; stats: Record<string, number> }[];
+    expect(body).toHaveLength(1);
+    expect(body[0]!.name).toBe('Jayson Tatum');
+    expect(body[0]!.stats.points).toBe(28);
+  });
 });
 
 describe('POST /admin/markets/:id/resolve', () => {

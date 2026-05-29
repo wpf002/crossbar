@@ -136,8 +136,10 @@ function assignStat(
     const subVals = value.split(sep);
     if (subKeys.length >= 2 && subKeys.length === subVals.length) {
       for (let i = 0; i < subKeys.length; i++) {
+        const subKey = subKeys[i];
+        if (!subKey) continue;
         const n = Number(subVals[i]);
-        if (Number.isFinite(n)) stats[subKeys[i]] = n;
+        if (Number.isFinite(n)) stats[subKey] = n;
       }
       return;
     }

@@ -33,13 +33,14 @@ describe('parseBoxscorePlayers', () => {
 
     const lines = parseBoxscorePlayers(teams);
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({
+    const cook = lines[0]!;
+    expect(cook).toMatchObject({
       externalId: '1',
       name: 'James Cook',
       team: 'Buffalo Bills',
       position: 'RB',
     });
-    expect(lines[0].stats).toEqual({
+    expect(cook.stats).toEqual({
       rushingAttempts: 18,
       rushingYards: 84,
       rushingTouchdowns: 1,
@@ -73,7 +74,8 @@ describe('parseBoxscorePlayers', () => {
     ];
 
     const lines = parseBoxscorePlayers(teams);
-    expect(lines[0].stats).toEqual({
+    const tatum = lines[0]!;
+    expect(tatum.stats).toEqual({
       fieldGoalsMade: 9,
       fieldGoalsAttempted: 19,
       threePointFieldGoalsMade: 4,
@@ -81,7 +83,7 @@ describe('parseBoxscorePlayers', () => {
       points: 28,
     });
     // "36:12" is non-numeric → dropped
-    expect(lines[0].stats.minutes).toBeUndefined();
+    expect(tatum.stats.minutes).toBeUndefined();
   });
 
   it('skips athletes without an id and tolerates empty input', () => {

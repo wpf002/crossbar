@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { PROP_CATALOG } from '@crossbar/shared';
 import { prisma } from '../lib/prisma.js';
 import { HttpError } from '../lib/errors.js';
 import type { EventBus } from '../lib/events.js';
@@ -22,14 +23,20 @@ interface MarketBrief {
   eventId: string;
 }
 
-const CreateMarketSchema = z.object({
-  eventId: z.string().min(1),
-  type: z.enum(['MONEYLINE', 'TOTAL', 'SPREAD']),
-  line: z.number().optional(),
-  question: z.string().optional(),
-  yesLabel: z.string().optional(),
-  noLabel: z.string().optional(),
-});
+const CreateMarketSchema = z
+  .object({
+    eventId: z.string().min(1),
+    type: z.enum(['MONEYLINE', 'TOTAL', 'SPREAD', 'PLAYER_TOTAL']),
+    line: z.number().optional(),
+    playerId: z.string().optional(),
+    statKey: z.string().optional(),
+    question: z.string().optional(),
+    yesLabel: z.string().optional(),
+    noLabel: z.string().optional(),
+  })
+  .refine((v) => v.type !== 'PLAYER_TOTAL' || (v.playerId && v.statKey && v.line != null), {
+    message: 'PLAYER_TOTAL markets require playerId, statKey, and a numeric line',
+  });
 
 const ResolveSchema = z.object({
   outcome: z.enum(['YES', 'NO', 'INVALID']),
@@ -155,6 +162,27 @@ export default function adminRoutes(deps: AdminDeps) {
     fastify.post('/markets', async (req) => {
       const input = CreateMarketSchema.parse(req.body);
       return matcher.request<{ market: MarketBrief }>('create_market', req.user.id, input);
+    });
+
+    // The prop catalog the platform knows how to offer, per sport. Used by the
+    // admin UI to pick a statKey + see the default line when creating a prop.
+    fastify.get('/props/catalog', async () => PROP_CATALOG);
+
+    // Players with a recorded stat line for an event, so an admin can pick a
+    // player (and see which stats are available) when creating a PLAYER_TOTAL.
+    fastify.get<{ Params: { id: string } }>('/events/:id/players', async (req) => {
+      const stats = await prisma.playerStat.findMany({
+        where: { eventId: req.params.id },
+        include: { player: { select: { id: true, name: true, team: true, position: true } } },
+        orderBy: { player: { name: 'asc' } },
+      });
+      return stats.map((s) => ({
+        playerId: s.player.id,
+        name: s.player.name,
+        team: s.player.team,
+        position: s.player.position,
+        stats: s.stats,
+      }));
     });
 
     fastify.post<{ Params: { id: string } }>('/markets/:id/close', async (req) => {

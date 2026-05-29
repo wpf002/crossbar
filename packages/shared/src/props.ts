@@ -46,3 +46,8 @@ export const PROP_CATALOG: Record<SportId, PropDef[]> = {
 export function propDef(sport: SportId, statKey: string): PropDef | undefined {
   return PROP_CATALOG[sport]?.find((p) => p.statKey === statKey);
 }
+
+/** Canonical question text for a player over/under prop. */
+export function playerPropQuestion(playerName: string, unit: string, line: number): string {
+  return `Will ${playerName} record OVER ${line} ${unit}?`;
+}
